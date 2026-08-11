@@ -1,0 +1,44 @@
+name: suivis_douleur
+description: Calendrier simple pour suivre douleurs et activités (UTC date keys, FR locale).
+publish_to: "none"
+version: 1.7.0+7
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  google_mobile_ads: ^5.1.0
+  file_picker: ^8.1.2
+  file_selector: ^1.0.3
+  share_plus: ^10.1.2
+  shared_preferences: ^2.3.2
+  table_calendar: ^3.1.2
+  intl: ^0.19.0
+  provider: ^6.1.2
+  flutter_localizations:
+    sdk: flutter
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_native_splash: ^2.4.1
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/app_icon.png
+
+flutter_native_splash:
+  color: "#000000"
+  image: assets/app_icon.png
+  android_12:
+    image: assets/app_icon.png
+    icon_background_color: "#000000"
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/app_icon.png
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: assets/app_icon.png
