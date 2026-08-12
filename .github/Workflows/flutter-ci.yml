@@ -1,1 +1,147 @@
+name: Flutter CI
 
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+          cache: true
+
+      - name: Ensure Android project exists (no override)
+        run: |
+          if [ ! -d android ]; then
+            flutter create . --platforms=android
+          fi
+      - name: Patch Android toolchain (AGP/Kotlin/Gradle)
+        run: |
+          set -e
+          if [ -f android/settings.gradle ]; then
+            sed -i 's/id "com.android.application" version "[^"]*"/id "com.android.application" version "8.6.1"/' android/settings.gradle || true
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.22"/' android/settings.gradle || true
+          fi
+          if [ -f android/build.gradle ]; then
+            sed -i 's/com.android.tools.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.6.1/' android/build.gradle || true
+            sed -i 's/org.jetbrains.kotlin:kotlin-gradle-plugin:[0-9.]\+/org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22/' android/build.gradle || true
+          fi
+          if [ -f android/gradle/wrapper/gradle-wrapper.properties ]; then
+            sed -i 's#distributionUrl=.*#distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-all.zip#' android/gradle/wrapper/gradle-wrapper.properties
+          fi
+      - name: Pub get
+        run: flutter pub get
+
+      # 1) Génère les icônes
+      - name: Generate launcher icons (Android)
+        run: |
+          cat > flutter_launcher_icons.yaml << 'YAML'
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: assets/app_icon.png
+            adaptive_icon_foreground: assets/app_icon.png
+            adaptive_icon_background: "#FFFFFF"
+            adaptive_icon_monochrome: assets/app_icon.png
+          YAML
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+      # 2) Sync des icônes dans src/main/res
+      - name: Sync icons into main res
+        run: |
+          set -e
+          ANDROID_MAIN="android/app/src/main/res"
+          ANDROID_FLAVOR="android/app/src/android/res"
+          if [ -d "$ANDROID_FLAVOR" ]; then
+            echo "Found flavor res at $ANDROID_FLAVOR → syncing to $ANDROID_MAIN"
+            rsync -av --ignore-existing "$ANDROID_FLAVOR/" "$ANDROID_MAIN/"
+            rsync -av "$ANDROID_FLAVOR/" "$ANDROID_MAIN/"
+          fi
+          rm -f "$ANDROID_MAIN/mipmap-anydpi-v26/ic_launcher.xml" || true
+          rm -f "$ANDROID_MAIN/mipmap-anydpi-v26/ic_launcher_round.xml" || true
+          echo "== main mipmap content =="
+          ls -la "$ANDROID_MAIN"/mipmap-* || true
+      # 3) Splash screen
+      - name: Generate splash screen (Android)
+        run: dart run flutter_native_splash:create
+
+      # 4) Nom d’app + icônes + ID AdMob dans AndroidManifest
+      - name: Ensure app name, icons & AdMob ID in AndroidManifest
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/res/values
+          echo '<resources><string name="app_name">Suivis douleur</string></resources>' > android/app/src/main/res/values/strings.xml
+          # app_name
+          if grep -q 'android:label=' "$M"; then
+            sed -i -E 's/android:label="[^"]*"/android:label="@string\/app_name"/' "$M"
+          else
+            sed -i -E 's/<application /<application android:label="@string\/app_name" /' "$M"
+          fi
+          # icône
+          if grep -q 'android:icon=' "$M"; then
+            sed -i -E 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' "$M"
+          else
+            sed -i -E 's/<application /<application android:icon="@mipmap\/ic_launcher" /' "$M"
+          fi
+          if grep -q 'android:roundIcon=' "$M"; then
+            sed -i -E 's/android:roundIcon="[^"]*"/android:roundIcon="@mipmap\/ic_launcher_round"/' "$M"
+          else
+            sed -i -E 's/<application /<application android:roundIcon="@mipmap\/ic_launcher_round" /' "$M"
+          fi
+          # ID d’application AdMob (obligatoire pour Google Mobile Ads)
+          if ! grep -q 'com.google.android.gms.ads.APPLICATION_ID' "$M"; then
+            sed -i '/<\/application>/i\        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-8341770383248834~2436386218" />' "$M"
+          fi
+          echo "== AndroidManifest icon & AdMob lines =="
+          grep -n 'android:icon\|android:roundIcon\|com.google.android.gms.ads.APPLICATION_ID' "$M" || true
+      - name: Analyze (lib only)
+        run: flutter analyze lib || true
+
+      - name: Upgrade Gradle Wrapper to 8.7
+        working-directory: android
+        run: ./gradlew wrapper --gradle-version 8.7 --distribution-type all
+
+      - name: Clean before build
+        run: flutter clean
+
+      # ------- Build APK sans pub -------
+      - name: Build APK (release, no-ads)
+        run: flutter build apk --release --dart-define=SHOW_ADS=false
+
+      - name: Keep no-ads apk
+        run: |
+          mkdir -p build/ci_apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/ci_apk/app-release-noads.apk
+      # ------- Build APK avec pub -------
+      - name: Build APK (release, ADS)
+        run: flutter build apk --release --dart-define=SHOW_ADS=true
+
+      - name: Keep ads apk
+        run: |
+          mkdir -p build/ci_apk
+          cp build/app/outputs/flutter-apk/app-release.apk build/ci_apk/app-release-ads.apk
+      - name: Show merged resources (optional debug)
+        run: |
+          echo "== Check packaged resources =="
+          find android/app/build -type f -path "*merged_*/*mipmap*" -maxdepth 4 | sed 's#android/app/build##' | head -n 100 || true
+      - name: Upload APK (no-ads)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Suivis_Douleur_no_ads
+          path: build/ci_apk/app-release-noads.apk
+
+      - name: Upload APK (ADS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Suivis_Douleur_ads
+          path: build/ci_apk/app-release-ads.apk
