@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -899,12 +900,11 @@ class _SettingsPageState extends State<SettingsPage> {
                     final result = await FilePicker.platform.pickFiles(
                       type: FileType.custom,
                       allowedExtensions: ['csv'],
-                      withData: true,
                     );
-                    final bytes = result?.files.single.bytes;
-                    if (bytes != null) {
-                      final count =
-                          await context.read<AppState>().importCsvFr(bytes);
+                    if (result != null && result.files.single.bytes != null) {
+                      final count = await context
+                          .read<AppState>()
+                          .importCsvFr(result.files.single.bytes!);
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1122,55 +1122,43 @@ class _SettingsPageState extends State<SettingsPage> {
                   }
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.folder),
-                title: const Text('Enregistrer dans un dossier'),
-                onTap: () async {
-                  Navigator.pop(ctx);
+              if (!kIsWeb)
+                ListTile(
+                  leading: const Icon(Icons.folder),
+                  title: const Text('Enregistrer dans un dossier'),
+                  onTap: () async {
+                    Navigator.pop(ctx);
 
-                  final bytes = context.read<AppState>().buildCsvBytesFr();
-                  final name = context
-                      .read<AppState>()
-                      .buildCsvXFileFr()
-                      .name;
+                    final bytes = context.read<AppState>().buildCsvBytesFr();
+                    final name = context.read<AppState>().buildCsvXFileFr().name;
 
-                  try {
-                    final savedPath = await FilePicker.platform.saveFile(
-                      dialogTitle: 'Enregistrer l’export CSV',
-                      fileName: name,
-                      bytes: bytes,
-                      type: FileType.custom,
-                      allowedExtensions: ['csv'],
-                    );
+                    try {
+                      final dir = await FilePicker.platform.getDirectoryPath();
+                      if (dir == null) return;
 
-                    if (savedPath == null) {
+                      final sep = dir.endsWith('/') ? '' : '/';
+                      final path = '$dir$sep$name';
+                      await FilePicker.platform.saveFile(
+                        dialogTitle: 'Enregistrer le CSV',
+                        fileName: name,
+                        bytes: bytes,
+                      );
+
                       if (context.mounted) {
+                        context.read<AppState>().markExportDone();
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Enregistrement annulé'),
-                          ),
+                          SnackBar(content: Text('Fichier exporté ✅ ($name)')),
                         );
                       }
-                      return;
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Erreur export : $e')),
+                        );
+                      }
                     }
-
-                    if (context.mounted) {
-                      context.read<AppState>().markExportDone();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Fichier enregistré ✅ ($name)'),
-                        ),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Erreur export : $e')),
-                      );
-                    }
-                  }
-                },
-              ),
+                  },
+                ),
             ],
           ),
         );
