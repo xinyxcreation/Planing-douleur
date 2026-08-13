@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -29,7 +28,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Intl.defaultLocale = 'fr_FR';
 
-  if (kShowAds) {
+  if (kShowAds && !kIsWeb) {
     await MobileAds.instance.initialize();
   }
 
@@ -598,7 +597,7 @@ class _BannerBottomState extends State<_BannerBottom> {
   @override
   void initState() {
     super.initState();
-    if (!kShowAds) return;
+    if (!kShowAds || kIsWeb) return;
 
     final banner = BannerAd(
       size: AdSize.banner,
@@ -900,11 +899,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     final result = await FilePicker.platform.pickFiles(
                       type: FileType.custom,
                       allowedExtensions: ['csv'],
+                      withData: true,
                     );
-                    if (result != null && result.files.single.bytes != null) {
-                      final count = await context
-                          .read<AppState>()
-                          .importCsvFr(result.files.single.bytes!);
+                    final bytes = result?.files.single.bytes;
+                    if (bytes != null) {
+                      final count =
+                          await context.read<AppState>().importCsvFr(bytes);
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1122,43 +1122,49 @@ class _SettingsPageState extends State<SettingsPage> {
                   }
                 },
               ),
-              if (!kIsWeb)
-                ListTile(
-                  leading: const Icon(Icons.folder),
-                  title: const Text('Enregistrer dans un dossier'),
-                  onTap: () async {
-                    Navigator.pop(ctx);
+              ListTile(
+                leading: const Icon(Icons.save_alt),
+                title: const Text('Enregistrer le fichier CSV'),
+                onTap: () async {
+                  Navigator.pop(ctx);
 
-                    final bytes = context.read<AppState>().buildCsvBytesFr();
-                    final name = context.read<AppState>().buildCsvXFileFr().name;
+                  final bytes = context.read<AppState>().buildCsvBytesFr();
+                  final name = context
+                      .read<AppState>()
+                      .buildCsvXFileFr()
+                      .name;
 
-                    try {
-                      final dir = await FilePicker.platform.getDirectoryPath();
-                      if (dir == null) return;
+                  try {
+                    final path = await FilePicker.platform.saveFile(
+                      dialogTitle: 'Enregistrer le CSV',
+                      fileName: name,
+                      bytes: bytes,
+                      type: FileType.custom,
+                      allowedExtensions: ['csv'],
+                    );
 
-                      final sep = dir.endsWith('/') ? '' : '/';
-                      final path = '$dir$sep$name';
-                      await FilePicker.platform.saveFile(
-                        dialogTitle: 'Enregistrer le CSV',
-                        fileName: name,
-                        bytes: bytes,
-                      );
-
-                      if (context.mounted) {
-                        context.read<AppState>().markExportDone();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Fichier exporté ✅ ($name)')),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Erreur export : $e')),
-                        );
-                      }
+                    if (path != null) {
+                      context.read<AppState>().markExportDone();
                     }
-                  },
-                ),
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(path == null
+                              ? 'Enregistrement annulé'
+                              : 'Fichier enregistré ✅'),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur export : $e')),
+                      );
+                    }
+                  }
+                },
+              ),
             ],
           ),
         );
