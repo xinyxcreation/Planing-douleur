@@ -1,7 +1,7 @@
 name: suivis_douleur
 description: Calendrier simple pour suivre douleurs et activités (UTC date keys, FR locale).
 publish_to: "none"
-version: 1.7.0+7
+version: 1.7.0+8
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -13,7 +13,7 @@ dependencies:
   share_plus: ^10.1.2
   shared_preferences: ^2.3.2
   table_calendar: ^3.1.2
-  intl: ^0.19.0
+  intl: ^0.20.3
   provider: ^6.1.2
   flutter_localizations:
     sdk: flutter
