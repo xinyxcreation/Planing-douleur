@@ -1,8 +1,8 @@
 // lib/main.dart — Suivis douleur + CSV FR + Réglages exportés + pubs AdMob
-import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
