@@ -1,30 +1,15 @@
-# Suivis douleur — v1.7
+# Suivis douleur
 
-PWA Flutter pour suivre les douleurs et activités.
+Application Flutter de suivi des douleurs et activités.
 
-## Web / PWA
+## PWA / Web
 
-Le dépôt est configuré pour que **GitHub Actions construise et publie automatiquement la PWA** sur GitHub Pages.
+La version Web est construite et publiée automatiquement sur GitHub Pages à chaque push sur `main`.
 
-Après un `git push`, aucune commande Flutter supplémentaire n’est nécessaire : GitHub lance automatiquement `flutter pub get` puis `flutter build web --release`.
+URL : https://xinyxcreation.github.io/Planing-douleur-pwa/
 
-Application : https://xinyxcreation.github.io/Planing-douleur-pwa/
-
-## Développement local
-
-```bash
-flutter pub get
-flutter run -d chrome
-```
-
-## Build manuel
-
-```bash
-flutter build web --release --base-href /Planing-douleur-pwa/
-```
+Aucune commande Flutter n'est nécessaire pour le déploiement : GitHub Actions lance automatiquement `flutter pub get` puis `flutter build web --release`.
 
 ## Android
 
-```bash
-flutter build apk --release
-```
+Le workflow `release.yml` est conservé pour les builds Android.
