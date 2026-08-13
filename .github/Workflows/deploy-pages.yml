@@ -1,8 +1,9 @@
-name: Deploy Flutter PWA to GitHub Pages
+name: Deploy PWA to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -17,6 +18,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,23 +26,25 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.3"
           channel: stable
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
+      - name: Enable Web
+        run: flutter config --enable-web
 
-      - name: Ensure Web platform exists
+      - name: Create Web platform if missing
         run: |
           if [ ! -d web ]; then
             flutter create . --platforms=web
           fi
 
-      - name: Build Flutter Web
-        run: flutter build web --release --base-href /Planing-douleur-pwa/ --dart-define=SHOW_ADS=false
+      - name: Install dependencies
+        run: flutter pub get
 
-      - name: Setup Pages
+      - name: Build Web
+        run: flutter build web --release --base-href "/Planing-douleur-pwa/"
+
+      - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload Pages artifact
@@ -49,11 +53,13 @@ jobs:
           path: build/web
 
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
