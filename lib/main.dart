@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'download_helper.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +21,7 @@ const bool kShowAds = bool.fromEnvironment('SHOW_ADS', defaultValue: false);
 
 /// ID de bannière **PROD** AdMob Android
 const String kBannerAdUnitIdAndroid =
-'ca-app-pub-8341770383248834/5762205942';
+    'ca-app-pub-8341770383248834/5762205942';
 
 const kAppTitle = 'Suivis douleur';
 
@@ -123,8 +124,8 @@ class _RootScaffoldState extends State<RootScaffold> {
         title: const Text('Pensez à sauvegarder'),
         content: const Text(
           'Vous n’avez pas exporté vos données depuis plus d’une semaine.\n\n'
-        'Conseil : utilisez l’export CSV dans l’onglet Réglages pour garder '
-        'une copie de sécurité sur votre drive ou ordinateur.',
+          'Conseil : utilisez l’export CSV dans l’onglet Réglages pour garder '
+          'une copie de sécurité sur votre drive ou ordinateur.',
         ),
         actions: [
           TextButton(
@@ -167,8 +168,8 @@ class DayEntry {
   final Set<String> activities;
 
   DayEntry({Map<String, int>? painLevels, Set<String>? activities})
-  : painLevels = Map.of(painLevels ?? {}),
-  activities = Set.of(activities ?? {});
+      : painLevels = Map.of(painLevels ?? {}),
+        activities = Set.of(activities ?? {});
 
   int maxPain() {
     if (painLevels.values.isEmpty) return 0;
@@ -176,17 +177,17 @@ class DayEntry {
   }
 
   Map<String, dynamic> toJson() => {
-    'painLevels': painLevels,
-    'activities': activities.toList(),
-  };
+        'painLevels': painLevels,
+        'activities': activities.toList(),
+      };
 
   factory DayEntry.fromJson(Map<String, dynamic> json) => DayEntry(
-    painLevels: (json['painLevels'] as Map?)
-    ?.map((k, v) => MapEntry('$k', (v as num).toInt())) ??
-    {},
-    activities:
-    ((json['activities'] as List?) ?? []).map((e) => '$e').toSet(),
-  );
+        painLevels: (json['painLevels'] as Map?)
+                ?.map((k, v) => MapEntry('$k', (v as num).toInt())) ??
+            {},
+        activities:
+            ((json['activities'] as List?) ?? []).map((e) => '$e').toSet(),
+      );
 }
 
 /// Enum de parsing CSV
@@ -221,7 +222,7 @@ class AppState extends ChangeNotifier {
   DateTime? lastExportAt;
 
   static String _key(DateTime local) => DateFormat('yyyy-MM-dd')
-  .format(DateTime.utc(local.year, local.month, local.day));
+      .format(DateTime.utc(local.year, local.month, local.day));
 
   DayEntry entryFor(DateTime day) => entries[_key(day)] ?? DayEntry();
 
@@ -404,7 +405,7 @@ class AppState extends ChangeNotifier {
       bytes,
       mimeType: 'text/csv; charset=utf-8',
       name:
-      'douleurs_activites_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
+          'douleurs_activites_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
     );
   }
 
@@ -472,7 +473,7 @@ class AppState extends ChangeNotifier {
 
         final dt = DateFormat('dd/MM/yyyy').parse(dateFr);
         final key = DateFormat('yyyy-MM-dd')
-        .format(DateTime.utc(dt.year, dt.month, dt.day));
+            .format(DateTime.utc(dt.year, dt.month, dt.day));
 
         final e = importedEntries.putIfAbsent(key, () => DayEntry());
 
@@ -495,8 +496,8 @@ class AppState extends ChangeNotifier {
     if (importedAct.isNotEmpty) activityTypes = importedAct;
     if (importedEntries.isNotEmpty) {
       entries
-      ..clear()
-      ..addAll(importedEntries);
+        ..clear()
+        ..addAll(importedEntries);
     }
 
     await _save();
@@ -548,7 +549,7 @@ class _PlanningPageState extends State<PlanningPage> {
               availableGestures: AvailableGestures.all,
               headerStyle: const HeaderStyle(
                 formatButtonVisible: false,
-                  titleCentered: true,
+                titleCentered: true,
               ),
               calendarStyle: const CalendarStyle(
                 isTodayHighlighted: true,
@@ -556,10 +557,10 @@ class _PlanningPageState extends State<PlanningPage> {
               ),
               calendarBuilders: CalendarBuilders(
                 defaultBuilder: (_, day, __) => _DayCell(dayLocal: day),
-                  todayBuilder: (_, day, __) =>
-                  _DayCell(dayLocal: day, isToday: true),
-                  selectedBuilder: (_, day, __) =>
-                  _DayCell(dayLocal: day, isSelected: true),
+                todayBuilder: (_, day, __) =>
+                    _DayCell(dayLocal: day, isToday: true),
+                selectedBuilder: (_, day, __) =>
+                    _DayCell(dayLocal: day, isSelected: true),
               ),
             ),
           ),
@@ -663,13 +664,13 @@ class _DayCell extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor, width: maxPain > 0 ? 2 : 0.5),
         color: isSelected
-        ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
-        : isToday
-        ? Theme.of(context)
-        .colorScheme
-        .secondaryContainer
-        .withOpacity(0.4)
-        : null,
+            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
+            : isToday
+                ? Theme.of(context)
+                    .colorScheme
+                    .secondaryContainer
+                    .withOpacity(0.4)
+                : null,
       ),
       alignment: Alignment.center,
       margin: const EdgeInsets.all(4),
@@ -685,17 +686,17 @@ class _Legend extends StatelessWidget {
   const _Legend();
 
   Widget _dot(Color c, String label) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 14,
-        height: 14,
-        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-      ),
-      const SizedBox(width: 6),
-      Text(label),
-    ],
-  );
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(label),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -712,11 +713,11 @@ class _Legend extends StatelessWidget {
     ];
 
     return isPhone
-    ? Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    )
-    : Row(children: children);
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: children,
+          )
+        : Row(children: children);
   }
 }
 
@@ -766,7 +767,7 @@ class _DayEditor extends StatelessWidget {
               title: Text(act),
               value: checked,
               onChanged: (v) =>
-              context.read<AppState>().toggleActivity(dayLocal, act, v ?? false),
+                  context.read<AppState>().toggleActivity(dayLocal, act, v ?? false),
             );
           }),
 
@@ -791,7 +792,7 @@ class _PainRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     void setLevel(int v) =>
-    context.read<AppState>().setPainLevel(dayLocal, category, v);
+        context.read<AppState>().setPainLevel(dayLocal, category, v);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -864,232 +865,262 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.all(16),
         children: [
           Text('Exporter / Importer les données',
-               style: Theme.of(context).textTheme.titleLarge),
-               const SizedBox(height: 8),
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
 
-               // -------- Affichage de la dernière sauvegarde --------
-               if (state.lastExportAt != null)
-                 Padding(
-                   padding: const EdgeInsets.only(bottom: 12),
-                   child: Text(
-                     'Dernière sauvegarde : '
-                   '${DateFormat('dd/MM/yyyy – HH:mm').format(state.lastExportAt!.toLocal())}',
-                   style: TextStyle(
-                     color: Theme.of(context).colorScheme.primary,
-                     fontStyle: FontStyle.italic,
-                   ),
-                   ),
-                 ),
+          // -------- Affichage de la dernière sauvegarde --------
+          if (state.lastExportAt != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Dernière sauvegarde : '
+                '${DateFormat('dd/MM/yyyy – HH:mm').format(state.lastExportAt!.toLocal())}',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
 
-                 Row(
-                   children: [
-                     Expanded(
-                       child: FilledButton.icon(
-                         icon: const Icon(Icons.ios_share),
-                         label: const Text('Exporter CSV'),
-                         onPressed: () => _showExportSheet(context),
-                       ),
-                     ),
-                     const SizedBox(width: 8),
-                     Expanded(
-                       child: OutlinedButton.icon(
-                         icon: const Icon(Icons.file_download),
-                         label: const Text('Importer CSV'),
-                         onPressed: () async {
-                           final result = await FilePicker.platform.pickFiles(
-                             type: FileType.custom,
-                             allowedExtensions: ['csv'],
-                             withData: true,
-                           );
-                           final bytes = result?.files.single.bytes;
-                           if (bytes != null) {
-                             final count =
-                             await context.read<AppState>().importCsvFr(bytes);
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.ios_share),
+                  label: const Text('Exporter CSV'),
+                  onPressed: () => _showExportSheet(context),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.file_download),
+                  label: const Text('Importer CSV'),
+                  onPressed: () async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: kIsWeb ? FileType.any : FileType.custom,
+                      allowedExtensions: kIsWeb ? null : ['csv'],
+                      withData: true,
+                      allowMultiple: false,
+                    );
 
-                             if (context.mounted) {
-                               ScaffoldMessenger.of(context).showSnackBar(
-                                 SnackBar(
-                                   content:
-                                   Text('Import terminé : $count ligne(s) importées'),
-                                 ),
-                               );
-                             }
-                           }
-                         },
-                       ),
-                     ),
-                   ],
-                 ),
+                    if (result == null || result.files.isEmpty) return;
 
-                 const SizedBox(height: 12),
-                 const Divider(),
-                 const SizedBox(height: 16),
+                    final file = result.files.single;
+                    final bytes = file.bytes;
 
-                 Text('Liste des douleurs',
-                      style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 8),
-
-                      _addRow(
-                        controller: painController,
-                        hint: 'Ajouter une douleur (ex: Épaule)',
-                        onAdd: () {
-                          context.read<AppState>().addPainCategory(painController.text.trim());
-                          painController.clear();
-                        },
-                      ),
-
-                     const SizedBox(height: 8),
-
-                     ReorderableListView(
-                       shrinkWrap: true,
-                       physics: const NeverScrollableScrollPhysics(),
-                       onReorder: (oldIndex, newIndex) {
-                         if (newIndex > oldIndex) newIndex -= 1;
-                         final item = state.painCategories.removeAt(oldIndex);
-                         state.painCategories.insert(newIndex, item);
-                         context.read<AppState>()._save();
-                         setState(() {});
-                       },
-                       children: [
-                         for (final c in state.painCategories)
-                           Card(
-                             key: ValueKey('pain_$c'),
-                             child: ListTile(
-                               leading: const Icon(Icons.drag_indicator),
-                               title: Text(c),
-                               trailing: Wrap(
-                                 spacing: 8,
-                                 children: [
-                                   IconButton(
-                                     icon: const Icon(Icons.edit),
-                                     tooltip: 'Renommer',
-                                     onPressed: () async {
-                                       final ctrl = TextEditingController(text: c);
-                                       final newName = await showDialog<String>(
-                                         context: context,
-                                         builder: (ctx) => AlertDialog(
-                                           title: const Text('Renommer'),
-                                           content: TextField(
-                                             controller: ctrl,
-                                             autofocus: true,
-                                             decoration: const InputDecoration(
-                                               border: OutlineInputBorder(),
-                                             ),
-                                           ),
-                                           actions: [
-                                             TextButton(
-                                               onPressed: () => Navigator.pop(ctx),
-                                               child: const Text('Annuler'),
-                                             ),
-                                             FilledButton(
-                                               onPressed: () => Navigator.pop(
-                                                 ctx,
-                                                 ctrl.text.trim(),
-                                               ),
-                                               child: const Text('Valider'),
-                                             ),
-                                           ],
-                                         ),
-                                       );
-                                       if (newName != null && newName.isNotEmpty) {
-                                         context.read<AppState>().renamePainCategory(c, newName);
-                                       }
-                                     },
-                                   ),
-                                   IconButton(
-                                     icon: const Icon(Icons.delete_outline),
-                                     tooltip: 'Supprimer',
-                                     onPressed: () =>
-                                     context.read<AppState>().removePainCategory(c),
-                                   ),
-                                 ],
-                               ),
-                             ),
-                           ),
-                       ],
-                     ),
-
-                     const SizedBox(height: 24),
-
-                     Text('Liste des activités',
-                          style: Theme.of(context).textTheme.titleLarge),
-                          const SizedBox(height: 8),
-
-                          _addRow(
-                            controller: activityController,
-                            hint: 'Ajouter une activité (ex: Étirements)',
-                            onAdd: () {
-                              context.read<AppState>().addActivityType(activityController.text.trim());
-                              activityController.clear();
-                            },
+                    if (bytes == null) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Impossible de lire ce fichier.'),
                           ),
+                        );
+                      }
+                      return;
+                    }
 
-                     const SizedBox(height: 8),
+                    // Sur Web, on ne filtre pas le sélecteur : certains
+                    // navigateurs masquent les fichiers nouvellement créés.
+                    // On vérifie l'extension après sélection.
+                    if (kIsWeb &&
+                        !file.name.toLowerCase().endsWith('.csv')) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Veuillez sélectionner un fichier CSV.'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
 
-                     ReorderableListView(
-                       shrinkWrap: true,
-                       physics: const NeverScrollableScrollPhysics(),
-                       onReorder: (oldIndex, newIndex) {
-                         if (newIndex > oldIndex) newIndex -= 1;
-                         final item = state.activityTypes.removeAt(oldIndex);
-                         state.activityTypes.insert(newIndex, item);
-                         context.read<AppState>()._save();
-                         setState(() {});
-                       },
-                       children: [
-                         for (final a in state.activityTypes)
-                           Card(
-                             key: ValueKey('act_$a'),
-                             child: ListTile(
-                               leading: const Icon(Icons.drag_indicator),
-                               title: Text(a),
-                               trailing: Wrap(
-                                 spacing: 8,
-                                 children: [
-                                   IconButton(
-                                     icon: const Icon(Icons.edit),
-                                     tooltip: 'Renommer',
-                                     onPressed: () async {
-                                       final ctrl = TextEditingController(text: a);
-                                       final newName = await showDialog<String>(
-                                         context: context,
-                                         builder: (ctx) => AlertDialog(
-                                           title: const Text('Renommer'),
-                                           content: TextField(controller: ctrl),
-                                           actions: [
-                                             TextButton(
-                                               onPressed: () => Navigator.pop(ctx),
-                                               child: const Text('Annuler'),
-                                             ),
-                                             FilledButton(
-                                               onPressed: () => Navigator.pop(
-                                                 ctx,
-                                                 ctrl.text.trim(),
-                                               ),
-                                               child: const Text('Valider'),
-                                             ),
-                                           ],
-                                         ),
-                                       );
-                                       if (newName != null && newName.isNotEmpty) {
-                                         context.read<AppState>().renameActivityType(a, newName);
-                                       }
-                                     },
-                                   ),
-                                   IconButton(
-                                     icon: const Icon(Icons.delete_outline),
-                                     tooltip: 'Supprimer',
-                                     onPressed: () =>
-                                     context.read<AppState>().removeActivityType(a),
-                                   ),
-                                 ],
-                               ),
-                             ),
-                           ),
-                       ],
-                     ),
+                    final count =
+                        await context.read<AppState>().importCsvFr(bytes);
 
-                     const SizedBox(height: 16),
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content:
+                              Text('Import terminé : $count ligne(s) importées'),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          Text('Liste des douleurs',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+
+          _addRow(
+            controller: painController,
+            hint: 'Ajouter une douleur (ex: Épaule)',
+            onAdd: () {
+              context.read<AppState>().addPainCategory(painController.text.trim());
+              painController.clear();
+            },
+          ),
+
+          const SizedBox(height: 8),
+
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final item = state.painCategories.removeAt(oldIndex);
+              state.painCategories.insert(newIndex, item);
+              context.read<AppState>()._save();
+              setState(() {});
+            },
+            children: [
+              for (final c in state.painCategories)
+                Card(
+                  key: ValueKey('pain_$c'),
+                  child: ListTile(
+                    leading: const Icon(Icons.drag_indicator),
+                    title: Text(c),
+                    trailing: Wrap(
+                      spacing: 8,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          tooltip: 'Renommer',
+                          onPressed: () async {
+                            final ctrl = TextEditingController(text: c);
+                            final newName = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Renommer'),
+                                content: TextField(
+                                  controller: ctrl,
+                                  autofocus: true,
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Annuler'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(
+                                      ctx,
+                                      ctrl.text.trim(),
+                                    ),
+                                    child: const Text('Valider'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (newName != null && newName.isNotEmpty) {
+                              context.read<AppState>().renamePainCategory(c, newName);
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Supprimer',
+                          onPressed: () =>
+                              context.read<AppState>().removePainCategory(c),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          Text('Liste des activités',
+              style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 8),
+
+          _addRow(
+            controller: activityController,
+            hint: 'Ajouter une activité (ex: Étirements)',
+            onAdd: () {
+              context.read<AppState>().addActivityType(activityController.text.trim());
+              activityController.clear();
+            },
+          ),
+
+          const SizedBox(height: 8),
+
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            onReorder: (oldIndex, newIndex) {
+              if (newIndex > oldIndex) newIndex -= 1;
+              final item = state.activityTypes.removeAt(oldIndex);
+              state.activityTypes.insert(newIndex, item);
+              context.read<AppState>()._save();
+              setState(() {});
+            },
+            children: [
+              for (final a in state.activityTypes)
+                Card(
+                  key: ValueKey('act_$a'),
+                  child: ListTile(
+                    leading: const Icon(Icons.drag_indicator),
+                    title: Text(a),
+                    trailing: Wrap(
+                      spacing: 8,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          tooltip: 'Renommer',
+                          onPressed: () async {
+                            final ctrl = TextEditingController(text: a);
+                            final newName = await showDialog<String>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Renommer'),
+                                content: TextField(controller: ctrl),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Annuler'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(
+                                      ctx,
+                                      ctrl.text.trim(),
+                                    ),
+                                    child: const Text('Valider'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (newName != null && newName.isNotEmpty) {
+                              context.read<AppState>().renameActivityType(a, newName);
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          tooltip: 'Supprimer',
+                          onPressed: () =>
+                              context.read<AppState>().removeActivityType(a),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -1128,13 +1159,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 onTap: () async {
                   Navigator.pop(ctx);
 
-                  final bytes = context.read<AppState>().buildCsvBytesFr();
-                  final name = context
-                  .read<AppState>()
-                  .buildCsvXFileFr()
-                  .name;
+                  final state = context.read<AppState>();
+                  final bytes = state.buildCsvBytesFr();
+                  final name = state.buildCsvXFileFr().name;
 
                   try {
+                    if (kIsWeb) {
+                      await downloadBytes(bytes, name);
+                      state.markExportDone();
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Fichier téléchargé ✅'),
+                          ),
+                        );
+                      }
+                      return;
+                    }
+
+                    // Android/iOS : on conserve le sélecteur de fichier
+                    // existant de file_picker.
                     final path = await FilePicker.platform.saveFile(
                       dialogTitle: 'Enregistrer le CSV',
                       fileName: name,
@@ -1144,15 +1189,17 @@ class _SettingsPageState extends State<SettingsPage> {
                     );
 
                     if (path != null) {
-                      context.read<AppState>().markExportDone();
+                      state.markExportDone();
                     }
 
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(path == null
-                          ? 'Enregistrement annulé'
-                          : 'Fichier enregistré ✅'),
+                          content: Text(
+                            path == null
+                                ? 'Enregistrement annulé'
+                                : 'Fichier enregistré ✅',
+                          ),
                         ),
                       );
                     }
