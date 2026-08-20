@@ -1,6 +1,5 @@
 // lib/main.dart — Suivis douleur + CSV FR + Réglages exportés + pubs AdMob
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'download_helper.dart';
 import 'package:flutter/foundation.dart';
@@ -10,9 +9,21 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'auth/auth_state.dart';
+import 'models/pain_category.dart';
+import 'models/activity_type.dart';
+import 'models/day_entry.dart';
+import 'models/day_pain_level.dart';
+import 'models/day_activity.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'sync/sync_config.dart';
+import 'sync/remote_change.dart';
+import 'sync/sync_storage.dart';
+import 'sync/api_client.dart';
+import 'sync/sync_manager.dart';
+import 'package:uuid/uuid.dart';
 
 /// Active / désactive les pubs en fonction du build :
 ///   - par défaut : false (aucune pub)
@@ -44,30 +55,323 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => AppState()..load(),
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: kAppTitle,
-        themeMode: ThemeMode.system,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          useMaterial3: true,
+      create: (_) => AuthState()..load(),
+      child: Consumer<AuthState>(
+        builder: (context, auth, _) {
+          if (auth.isLoading) {
+            return const MaterialApp(
+              debugShowCheckedModeBanner: false,
+              home: Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            );
+          }
+
+          return ChangeNotifierProvider(
+            create: (_) => AppState()..load(),
+            child: MaterialApp(
+              debugShowCheckedModeBanner: false,
+              title: kAppTitle,
+              themeMode: ThemeMode.system,
+              theme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: Colors.teal,
+                ),
+                useMaterial3: true,
+              ),
+              darkTheme: ThemeData(
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: Colors.teal,
+                  brightness: Brightness.dark,
+                ),
+                useMaterial3: true,
+              ),
+              locale: const Locale('fr', 'FR'),
+              supportedLocales: const [
+                Locale('fr', 'FR'),
+                Locale('en', 'US'),
+              ],
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+              ],
+              home: auth.isLoggedIn
+                  ? const RootScaffold()
+                  : const LoginPage(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+/* ============================== AUTH =============================== */
+
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _displayNameController = TextEditingController();
+
+  bool _registerMode = false;
+  bool _rememberMe = true;
+  bool _obscurePassword = true;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _displayNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() => _busy = true);
+
+    final auth = context.read<AuthState>();
+
+    bool success;
+
+    if (_registerMode) {
+      success = await auth.register(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        displayName: _displayNameController.text.trim().isEmpty
+            ? null
+            : _displayNameController.text.trim(),
+        rememberMe: _rememberMe,
+      );
+    } else {
+      success = await auth.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        rememberMe: _rememberMe,
+      );
+    }
+
+    if (!mounted) return;
+
+    setState(() => _busy = false);
+
+    if (!success && auth.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.error!),
         ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.teal,
-            brightness: Brightness.dark,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 420,
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Icon(
+                      Icons.health_and_safety,
+                      size: 64,
+                      color: theme.colorScheme.primary,
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Text(
+                      kAppTitle,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Text(
+                      _registerMode
+                          ? 'Créer votre compte'
+                          : 'Connectez-vous à votre compte',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyLarge,
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    if (_registerMode) ...[
+                      TextFormField(
+                        controller: _displayNameController,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Nom ou prénom',
+                          prefixIcon: Icon(Icons.person_outline),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+                    ],
+
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [
+                        AutofillHints.username,
+                        AutofillHints.email,
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Adresse email',
+                        prefixIcon: Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        final email = value?.trim() ?? '';
+
+                        if (email.isEmpty) {
+                          return 'Adresse email obligatoire.';
+                        }
+
+                        if (!email.contains('@')) {
+                          return 'Adresse email invalide.';
+                        }
+
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: _registerMode
+                          ? const [AutofillHints.newPassword]
+                          : const [AutofillHints.password],
+                      onFieldSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        labelText: 'Mot de passe',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword = !_obscurePassword;
+                            });
+                          },
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                        ),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Mot de passe obligatoire.';
+                        }
+
+                        if (_registerMode && value.length < 8) {
+                          return '8 caractères minimum.';
+                        }
+
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    CheckboxListTile(
+                      value: _rememberMe,
+                      onChanged: _busy
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _rememberMe = value ?? true;
+                              });
+                            },
+                      title: const Text('Se souvenir de moi'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
+                        child: _busy
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                _registerMode
+                                    ? 'Créer mon compte'
+                                    : 'Se connecter',
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () {
+                              setState(() {
+                                _registerMode = !_registerMode;
+                              });
+                            },
+                      child: Text(
+                        _registerMode
+                            ? 'J’ai déjà un compte'
+                            : 'Créer un nouveau compte',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          useMaterial3: true,
         ),
-        locale: const Locale('fr', 'FR'),
-        supportedLocales: const [Locale('fr', 'FR'), Locale('en', 'US')],
-        localizationsDelegates: const [
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        home: const RootScaffold(),
       ),
     );
   }
@@ -84,62 +388,12 @@ class RootScaffold extends StatefulWidget {
 
 class _RootScaffoldState extends State<RootScaffold> {
   int index = 0;
-  bool _backupReminderShown = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkBackupReminder();
-    });
   }
 
-  Future<void> _checkBackupReminder() async {
-    if (_backupReminderShown) return;
-    _backupReminderShown = true;
-
-    final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString('lastExportAt');
-    DateTime? last;
-
-    if (raw != null && raw.isNotEmpty) {
-      last = DateTime.tryParse(raw);
-    }
-
-    final now = DateTime.now();
-    bool shouldRemind;
-
-    if (last == null) {
-      shouldRemind = true;
-    } else {
-      final diff = now.difference(last).inDays;
-      shouldRemind = diff >= 7;
-    }
-
-    if (!shouldRemind || !mounted) return;
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Pensez à sauvegarder'),
-        content: const Text(
-          'Vous n’avez pas exporté vos données depuis plus d’une semaine.\n\n'
-          'Conseil : utilisez l’export CSV dans l’onglet Réglages pour garder '
-          'une copie de sécurité sur votre drive ou ordinateur.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Plus tard'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -163,121 +417,241 @@ class _RootScaffoldState extends State<RootScaffold> {
 
 /* ======================= DATA / STATE GLOBALE ==================== */
 
-class DayEntry {
-  final Map<String, int> painLevels;
-  final Set<String> activities;
-
-  DayEntry({Map<String, int>? painLevels, Set<String>? activities})
-      : painLevels = Map.of(painLevels ?? {}),
-        activities = Set.of(activities ?? {});
-
-  int maxPain() {
-    if (painLevels.values.isEmpty) return 0;
-    return painLevels.values.reduce((a, b) => a > b ? a : b);
-  }
-
-  Map<String, dynamic> toJson() => {
-        'painLevels': painLevels,
-        'activities': activities.toList(),
-      };
-
-  factory DayEntry.fromJson(Map<String, dynamic> json) => DayEntry(
-        painLevels: (json['painLevels'] as Map?)
-                ?.map((k, v) => MapEntry('$k', (v as num).toInt())) ??
-            {},
-        activities:
-            ((json['activities'] as List?) ?? []).map((e) => '$e').toSet(),
-      );
-}
-
 /// Enum de parsing CSV
 enum Section { none, pain, act, entries }
 
 class AppState extends ChangeNotifier {
-  List<String> painCategories = [
-    'Genoux G',
-    'Genoux D',
-    'Sciatique G',
-    'Sciatique D',
-    'Dos H',
-    'Dos B',
-    'Cervicales',
+  final SyncStorage _syncStorage = SyncStorage();
+  late final ApiClient _apiClient;
+  late final SyncManager _syncManager;
+
+  bool _syncInitialized = false;
+  static const Uuid _uuid = Uuid();
+
+  void initSync() {
+    if (_syncInitialized) return;
+
+    _apiClient = ApiClient(
+      baseUrl: SyncConfig.baseUrl,
+    );
+
+    _syncManager = SyncManager(
+      apiClient: _apiClient,
+      storage: _syncStorage,
+      userId: '',
+      onRemoteChange: (change) async {
+        await _applyRemoteChange(change);
+      },
+      getPendingChanges: () async {
+        return <Map<String, dynamic>>[];
+      },
+      clearPendingChanges: () async {},
+    );
+
+    _syncInitialized = true;
+  }
+
+  Future<void> syncNow() async {
+    initSync();
+
+    final auth = AuthState();
+
+    await auth.load();
+
+    _apiClient.token = auth.token;
+
+    if (_apiClient.token == null || _apiClient.token!.isEmpty) {
+      return;
+    }
+
+    await _syncManager.sync();
+  }
+
+  List<PainCategory> painCategories = [
+    PainCategory(id: _uuid.v7(), name: 'Genoux G', position: 0),
+    PainCategory(id: _uuid.v7(), name: 'Genoux D', position: 1),
+    PainCategory(id: _uuid.v7(), name: 'Sciatique G', position: 2),
+    PainCategory(id: _uuid.v7(), name: 'Sciatique D', position: 3),
+    PainCategory(id: _uuid.v7(), name: 'Dos H', position: 4),
+    PainCategory(id: _uuid.v7(), name: 'Dos B', position: 5),
+    PainCategory(id: _uuid.v7(), name: 'Cervicales', position: 6),
   ];
 
-  List<String> activityTypes = [
-    'Marche boulot',
-    'Marche sport',
-    'Balade',
-    'Elliptique',
-    'Gainage',
-    'Abdos',
-    'Pompes',
-    'Traction',
-    'Dips',
-    'Levé de poids',
-    'Sexe',
+  List<ActivityType> activityTypes = [
+    ActivityType(id: _uuid.v7(), name: 'Marche boulot', position: 0),
+    ActivityType(id: _uuid.v7(), name: 'Marche sport', position: 1),
+    ActivityType(id: _uuid.v7(), name: 'Balade', position: 2),
+    ActivityType(id: _uuid.v7(), name: 'Elliptique', position: 3),
+    ActivityType(id: _uuid.v7(), name: 'Gainage', position: 4),
+    ActivityType(id: _uuid.v7(), name: 'Abdos', position: 5),
+    ActivityType(id: _uuid.v7(), name: 'Pompes', position: 6),
+    ActivityType(id: _uuid.v7(), name: 'Traction', position: 7),
+    ActivityType(id: _uuid.v7(), name: 'Dips', position: 8),
+    ActivityType(id: _uuid.v7(), name: 'Levé de poids', position: 9),
+    ActivityType(id: _uuid.v7(), name: 'Sexe', position: 10),
   ];
 
   final Map<String, DayEntry> entries = {};
-  DateTime? lastExportAt;
 
   static String _key(DateTime local) => DateFormat('yyyy-MM-dd')
       .format(DateTime.utc(local.year, local.month, local.day));
 
-  DayEntry entryFor(DateTime day) => entries[_key(day)] ?? DayEntry();
+  PainCategory? painCategoryByName(String name) {
+    for (final category in painCategories) {
+      if (category.name == name) return category;
+    }
+    return null;
+  }
 
-  /* ----------------------- Mutations ---------------------- */
+  ActivityType? activityTypeByName(String name) {
+    for (final type in activityTypes) {
+      if (type.name == name) return type;
+    }
+    return null;
+  }
+
+  PainCategory? painCategoryById(String id) {
+    for (final category in painCategories) {
+      if (category.id == id) return category;
+    }
+    return null;
+  }
+
+  ActivityType? activityTypeById(String id) {
+    for (final type in activityTypes) {
+      if (type.id == id) return type;
+    }
+    return null;
+  }
+
+  DayEntry entryFor(DateTime day) {
+    final key = _key(day);
+
+    return entries[key] ??= DayEntry(
+      id: _uuid.v7(),
+      entryDate: key,
+    );
+  }
 
   void setPainLevel(DateTime day, String cat, int lvl) {
-    final k = _key(day);
-    final e = entries.putIfAbsent(k, () => DayEntry());
-    e.painLevels[cat] = lvl;
+    final category = painCategoryByName(cat);
+    if (category == null) return;
+
+    final entry = entryFor(day);
+
+    final index = entry.painLevels.indexWhere(
+      (pain) => pain.painCategoryId == category.id,
+    );
+
+    final pain = DayPainLevel(
+      id: index >= 0
+          ? entry.painLevels[index].id
+          : _uuid.v7(),
+      dayEntryId: entry.id,
+      painCategoryId: category.id,
+      level: lvl,
+    );
+
+    if (index >= 0) {
+      entry.painLevels[index] = pain;
+    } else {
+      entry.painLevels.add(pain);
+    }
+
     _save();
     notifyListeners();
   }
 
   void toggleActivity(DateTime day, String act, bool checked) {
-    final k = _key(day);
-    final e = entries.putIfAbsent(k, () => DayEntry());
+    final activityType = activityTypeByName(act);
+    if (activityType == null) return;
+
+    final entry = entryFor(day);
+
+    final index = entry.activities.indexWhere(
+      (activity) => activity.activityTypeId == activityType.id,
+    );
+
     if (checked) {
-      e.activities.add(act);
-    } else {
-      e.activities.remove(act);
+      if (index < 0) {
+        entry.activities.add(
+          DayActivity(
+            id: _uuid.v7(),
+            dayEntryId: entry.id,
+            activityTypeId: activityType.id,
+          ),
+        );
+      }
+    } else if (index >= 0) {
+      entry.activities.removeAt(index);
     }
+
     _save();
     notifyListeners();
   }
 
   void addPainCategory(String n) {
     n = n.trim();
-    if (n.isEmpty || painCategories.contains(n)) return;
-    painCategories.add(n);
+
+    if (n.isEmpty ||
+        painCategories.any((category) => category.name == n)) {
+      return;
+    }
+
+    painCategories.add(
+      PainCategory(
+        id: _uuid.v7(),
+        name: n,
+        position: painCategories.length,
+      ),
+    );
+
     _save();
     notifyListeners();
   }
 
   void addActivityType(String n) {
     n = n.trim();
-    if (n.isEmpty || activityTypes.contains(n)) return;
-    activityTypes.add(n);
+
+    if (n.isEmpty ||
+        activityTypes.any((activity) => activity.name == n)) {
+      return;
+    }
+
+    activityTypes.add(
+      ActivityType(
+        id: _uuid.v7(),
+        name: n,
+        position: activityTypes.length,
+      ),
+    );
+
     _save();
     notifyListeners();
   }
 
   void renamePainCategory(String oldName, String newName) {
     newName = newName.trim();
+
     if (newName.isEmpty || oldName == newName) return;
 
-    final i = painCategories.indexOf(oldName);
-    if (i == -1 || painCategories.contains(newName)) return;
+    final index = painCategories.indexWhere(
+      (category) => category.name == oldName,
+    );
 
-    painCategories[i] = newName;
-
-    for (final e in entries.values) {
-      if (e.painLevels.containsKey(oldName)) {
-        e.painLevels[newName] = e.painLevels.remove(oldName)!;
-      }
+    if (index == -1 ||
+        painCategories.any((category) => category.name == newName)) {
+      return;
     }
+
+    final oldCategory = painCategories[index];
+
+    painCategories[index] = PainCategory(
+      id: oldCategory.id,
+      name: newName,
+      position: oldCategory.position,
+      deletedAt: oldCategory.deletedAt,
+    );
 
     _save();
     notifyListeners();
@@ -285,60 +659,341 @@ class AppState extends ChangeNotifier {
 
   void renameActivityType(String oldName, String newName) {
     newName = newName.trim();
+
     if (newName.isEmpty || oldName == newName) return;
 
-    final i = activityTypes.indexOf(oldName);
-    if (i == -1 || activityTypes.contains(newName)) return;
+    final index = activityTypes.indexWhere(
+      (activity) => activity.name == oldName,
+    );
 
-    activityTypes[i] = newName;
+    if (index == -1 ||
+        activityTypes.any((activity) => activity.name == newName)) {
+      return;
+    }
 
-    for (final e in entries.values) {
-      if (e.activities.remove(oldName)) {
-        e.activities.add(newName);
+    final oldActivity = activityTypes[index];
+
+    activityTypes[index] = ActivityType(
+      id: oldActivity.id,
+      name: newName,
+      position: oldActivity.position,
+      deletedAt: oldActivity.deletedAt,
+    );
+
+    _save();
+    notifyListeners();
+  }
+
+  void removePainCategory(String name) {
+    final index = painCategories.indexWhere(
+      (category) => category.name == name,
+    );
+
+    if (index == -1) return;
+
+    final category = painCategories[index];
+
+    painCategories[index] = PainCategory(
+      id: category.id,
+      name: category.name,
+      position: category.position,
+      deletedAt: DateTime.now().toUtc(),
+    );
+
+    _save();
+    notifyListeners();
+  }
+
+  void removeActivityType(String name) {
+    final index = activityTypes.indexWhere(
+      (activity) => activity.name == name,
+    );
+
+    if (index == -1) return;
+
+    final activity = activityTypes[index];
+
+    activityTypes[index] = ActivityType(
+      id: activity.id,
+      name: activity.name,
+      position: activity.position,
+      deletedAt: DateTime.now().toUtc(),
+    );
+
+    _save();
+    notifyListeners();
+  }
+
+  Future<void> _applyRemoteChange(
+    RemoteChange change,
+  ) async {
+    switch (change.entity) {
+      case 'pain_category':
+        _applyPainCategoryChange(change);
+        break;
+
+      case 'activity_type':
+        _applyActivityTypeChange(change);
+        break;
+
+      case 'day_entry':
+        _applyDayEntryChange(change);
+        break;
+
+      case 'day_pain_level':
+        _applyDayPainLevelChange(change);
+        break;
+
+      case 'day_activity':
+        _applyDayActivityChange(change);
+        break;
+
+      default:
+        throw StateError(
+          'Entité distante inconnue : ${change.entity}',
+        );
+    }
+
+    await _save();
+    notifyListeners();
+  }
+
+  void _applyPainCategoryChange(RemoteChange change) {
+    final data = change.data;
+    if (data == null) return;
+
+    final id = data['id']?.toString();
+    final name = data['name']?.toString();
+
+    if (id == null || name == null) return;
+
+    final position = (data['position'] as num?)?.toInt() ?? 0;
+    final deleted = data['deletedAt'] != null;
+
+    final index = painCategories.indexWhere(
+      (item) => item.id == id,
+    );
+
+    if (deleted) {
+      if (index >= 0) {
+        painCategories.removeAt(index);
+      }
+      return;
+    }
+
+    final item = PainCategory(
+      id: id,
+      name: name,
+      position: position,
+    );
+
+    if (index >= 0) {
+      painCategories[index] = item;
+    } else {
+      painCategories.add(item);
+    }
+  }
+
+  void _applyActivityTypeChange(RemoteChange change) {
+    final data = change.data;
+    if (data == null) return;
+
+    final id = data['id']?.toString();
+    final name = data['name']?.toString();
+
+    if (id == null || name == null) return;
+
+    final position = (data['position'] as num?)?.toInt() ?? 0;
+    final deleted = data['deletedAt'] != null;
+
+    final index = activityTypes.indexWhere(
+      (item) => item.id == id,
+    );
+
+    if (deleted) {
+      if (index >= 0) {
+        activityTypes.removeAt(index);
+      }
+      return;
+    }
+
+    final item = ActivityType(
+      id: id,
+      name: name,
+      position: position,
+    );
+
+    if (index >= 0) {
+      activityTypes[index] = item;
+    } else {
+      activityTypes.add(item);
+    }
+  }
+
+  void _applyDayEntryChange(RemoteChange change) {
+    final data = change.data;
+    if (data == null) return;
+
+    final id = data['id']?.toString();
+    final date = data['entryDate']?.toString();
+
+    if (id == null || date == null || date.isEmpty) {
+      return;
+    }
+
+    if (change.operation == 'DELETE' ||
+        data['deletedAt'] != null) {
+      entries.remove(date);
+      return;
+    }
+
+    entries[date] ??= DayEntry(
+      id: id,
+      entryDate: date,
+    );
+  }
+
+  void _applyDayPainLevelChange(RemoteChange change) {
+    final data = change.data;
+    if (data == null) return;
+
+    final id = data['id']?.toString();
+    final dayEntryId = data['dayEntryId']?.toString();
+    final painCategoryId =
+        data['painCategoryId']?.toString();
+    final level =
+        (data['level'] as num?)?.toInt();
+
+    if (id == null ||
+        dayEntryId == null ||
+        painCategoryId == null ||
+        level == null) {
+      return;
+    }
+
+    DayEntry? entry;
+
+    for (final candidate in entries.values) {
+      if (candidate.id == dayEntryId) {
+        entry = candidate;
+        break;
       }
     }
 
-    _save();
-    notifyListeners();
-  }
+    if (entry == null) return;
 
-  void removePainCategory(String n) {
-    painCategories.remove(n);
-    for (final e in entries.values) {
-      e.painLevels.remove(n);
+    entry.painLevels.removeWhere(
+      (item) => item.id == id,
+    );
+
+    if (change.operation != 'DELETE' &&
+        data['deletedAt'] == null) {
+      entry.painLevels.add(
+        DayPainLevel(
+          id: id,
+          dayEntryId: dayEntryId,
+          painCategoryId: painCategoryId,
+          level: level,
+        ),
+      );
     }
-    _save();
-    notifyListeners();
   }
 
-  void removeActivityType(String n) {
-    activityTypes.remove(n);
-    for (final e in entries.values) {
-      e.activities.remove(n);
+  void _applyDayActivityChange(RemoteChange change) {
+    final data = change.data;
+    if (data == null) return;
+
+    final id = data['id']?.toString();
+    final dayEntryId = data['dayEntryId']?.toString();
+    final activityTypeId =
+        data['activityTypeId']?.toString();
+
+    if (id == null ||
+        dayEntryId == null ||
+        activityTypeId == null) {
+      return;
     }
-    _save();
-    notifyListeners();
-  }
 
-  /* ------------------------- Persistence --------------------------- */
+    DayEntry? entry;
+
+    for (final candidate in entries.values) {
+      if (candidate.id == dayEntryId) {
+        entry = candidate;
+        break;
+      }
+    }
+
+    if (entry == null) return;
+
+    entry.activities.removeWhere(
+      (item) => item.id == id,
+    );
+
+    if (change.operation != 'DELETE' &&
+        data['deletedAt'] == null) {
+      entry.activities.add(
+        DayActivity(
+          id: id,
+          dayEntryId: dayEntryId,
+          activityTypeId: activityTypeId,
+        ),
+      );
+    }
+  }
 
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
 
-    painCategories = sp.getStringList('painCategories') ?? painCategories;
-    activityTypes = sp.getStringList('activityTypes') ?? activityTypes;
+    final rawPain = sp.getString('painCategoriesV2');
+    final rawActivity = sp.getString('activityTypesV2');
 
-    final raw = sp.getString('entries');
-    if (raw != null && raw.isNotEmpty) {
-      final map = jsonDecode(raw) as Map<String, dynamic>;
-      map.forEach((k, v) {
-        entries[k] = DayEntry.fromJson(Map<String, dynamic>.from(v));
-      });
+    if (rawPain != null && rawPain.isNotEmpty) {
+      final decoded = jsonDecode(rawPain);
+
+      if (decoded is List) {
+        painCategories = decoded
+            .whereType<Map>()
+            .map(
+              (e) => PainCategory.fromJson(
+                Map<String, dynamic>.from(e),
+              ),
+            )
+            .toList();
+      }
     }
 
-    final last = sp.getString('lastExportAt');
-    if (last != null && last.isNotEmpty) {
-      lastExportAt = DateTime.tryParse(last);
+    if (rawActivity != null && rawActivity.isNotEmpty) {
+      final decoded = jsonDecode(rawActivity);
+
+      if (decoded is List) {
+        activityTypes = decoded
+            .whereType<Map>()
+            .map(
+              (e) => ActivityType.fromJson(
+                Map<String, dynamic>.from(e),
+              ),
+            )
+            .toList();
+      }
+    }
+
+    final raw = sp.getString('entriesV2');
+
+    if (raw != null && raw.isNotEmpty) {
+      final decoded = jsonDecode(raw);
+
+      if (decoded is Map) {
+        entries.clear();
+
+        decoded.forEach((key, value) {
+          if (value is Map) {
+            entries[key.toString()] =
+                DayEntry.fromJson(
+              Map<String, dynamic>.from(value),
+            );
+          }
+        });
+      }
     }
 
     notifyListeners();
@@ -346,17 +1001,25 @@ class AppState extends ChangeNotifier {
 
   Future<void> _save() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.setStringList('painCategories', painCategories);
-    await sp.setStringList('activityTypes', activityTypes);
-    await sp.setString('entries', jsonEncode(entries));
-    if (lastExportAt != null) {
-      await sp.setString('lastExportAt', lastExportAt!.toIso8601String());
-    }
-  }
 
-  void markExportDone() {
-    lastExportAt = DateTime.now();
-    _save();
+    await sp.setString(
+      'painCategoriesV2',
+      jsonEncode(
+        painCategories.map((e) => e.toJson()).toList(),
+      ),
+    );
+
+    await sp.setString(
+      'activityTypesV2',
+      jsonEncode(
+        activityTypes.map((e) => e.toJson()).toList(),
+      ),
+    );
+
+    await sp.setString(
+      'entriesV2',
+      jsonEncode(entries),
+    );
   }
 
   /* ---------------------- CSV EXPORT (FR) -------------------------- */
@@ -366,12 +1029,16 @@ class AppState extends ChangeNotifier {
 
     sb.writeln('#TYPE=PAIN_CATEGORIES_V1');
     for (final c in painCategories) {
-      sb.writeln(_safe(c));
+      if (c.deletedAt == null) {
+        sb.writeln(_safe(c.name));
+      }
     }
 
     sb.writeln('#TYPE=ACTIVITY_TYPES_V1');
     for (final a in activityTypes) {
-      sb.writeln(_safe(a));
+      if (a.deletedAt == null) {
+        sb.writeln(_safe(a.name));
+      }
     }
 
     sb.writeln('#TYPE=ENTRIES_V1');
@@ -382,12 +1049,24 @@ class AppState extends ChangeNotifier {
     for (final k in keys) {
       final e = entries[k]!;
 
-      for (final kv in e.painLevels.entries) {
-        sb.writeln('${_fmtDateFr(k)};${_safe(kv.key)};${kv.value};');
+      for (final pain in e.painLevels) {
+        final category = painCategoryById(pain.painCategoryId);
+
+        if (category != null && category.deletedAt == null) {
+          sb.writeln(
+            '${_fmtDateFr(k)};${_safe(category.name)};${pain.level};',
+          );
+        }
       }
 
-      for (final act in e.activities) {
-        sb.writeln('${_fmtDateFr(k)};;;$act');
+      for (final activity in e.activities) {
+        final type = activityTypeById(activity.activityTypeId);
+
+        if (type != null && type.deletedAt == null) {
+          sb.writeln(
+            '${_fmtDateFr(k)};;;${_safe(type.name)}',
+          );
+        }
       }
     }
 
@@ -475,25 +1154,83 @@ class AppState extends ChangeNotifier {
         final key = DateFormat('yyyy-MM-dd')
             .format(DateTime.utc(dt.year, dt.month, dt.day));
 
-        final e = importedEntries.putIfAbsent(key, () => DayEntry());
+        final e = importedEntries.putIfAbsent(
+        key,
+        () => DayEntry(
+          id: _uuid.v7(),
+          entryDate: key,
+        ),
+      );
 
         if (part.isNotEmpty && lvlStr.isNotEmpty) {
           final lvl = int.tryParse(lvlStr);
+
           if (lvl != null && lvl >= 1 && lvl <= 4) {
-            e.painLevels[part] = lvl;
+            final category = painCategories.firstWhere(
+              (c) => c.name == part,
+              orElse: () {
+                final created = PainCategory(
+                  id: _uuid.v7(),
+                  name: part,
+                  position: painCategories.length,
+                );
+                painCategories.add(created);
+                return created;
+              },
+            );
+
+            final existingIndex = e.painLevels.indexWhere(
+              (pain) => pain.painCategoryId == category.id,
+            );
+
+            final pain = DayPainLevel(
+              id: existingIndex >= 0
+                  ? e.painLevels[existingIndex].id
+                  : _uuid.v7(),
+              dayEntryId: e.id,
+              painCategoryId: category.id,
+              level: lvl,
+            );
+
+            if (existingIndex >= 0) {
+              e.painLevels[existingIndex] = pain;
+            } else {
+              e.painLevels.add(pain);
+            }
           }
         }
 
         if (act.isNotEmpty) {
-          e.activities.add(act);
+          final activityType = activityTypes.firstWhere(
+            (a) => a.name == act,
+            orElse: () {
+              final created = ActivityType(
+                id: _uuid.v7(),
+                name: act,
+                position: activityTypes.length,
+              );
+              activityTypes.add(created);
+              return created;
+            },
+          );
+
+          if (!e.activities.any(
+            (activity) => activity.activityTypeId == activityType.id,
+          )) {
+            e.activities.add(
+              DayActivity(
+                id: _uuid.v7(),
+                dayEntryId: e.id,
+                activityTypeId: activityType.id,
+              ),
+            );
+          }
         }
 
         count++;
       }
     }
 
-    if (importedPain.isNotEmpty) painCategories = importedPain;
-    if (importedAct.isNotEmpty) activityTypes = importedAct;
     if (importedEntries.isNotEmpty) {
       entries
         ..clear()
@@ -664,12 +1401,12 @@ class _DayCell extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor, width: maxPain > 0 ? 2 : 0.5),
         color: isSelected
-            ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5)
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5)
             : isToday
                 ? Theme.of(context)
                     .colorScheme
                     .secondaryContainer
-                    .withOpacity(0.4)
+                    .withValues(alpha: 0.4)
                 : null,
       ),
       alignment: Alignment.center,
@@ -749,27 +1486,45 @@ class _DayEditor extends StatelessWidget {
           Text('Douleurs', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
-          ...state.painCategories.map(
-            (cat) => _PainRow(
-              dayLocal: dayLocal,
-              category: cat,
-              level: entry.painLevels[cat] ?? 1,
-            ),
-          ),
+          ...state.painCategories
+              .where((cat) => cat.deletedAt == null)
+              .map(
+                (cat) {
+                  final pain = entry.painLevels.cast<DayPainLevel?>().firstWhere(
+                    (p) => p?.painCategoryId == cat.id,
+                    orElse: () => null,
+                  );
+
+                  return _PainRow(
+                    dayLocal: dayLocal,
+                    category: cat.name,
+                    level: pain?.level ?? 1,
+                  );
+                },
+              ),
 
           const SizedBox(height: 20),
           Text('Activités', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
-          ...state.activityTypes.map((act) {
-            final checked = entry.activities.contains(act);
-            return CheckboxListTile(
-              title: Text(act),
-              value: checked,
-              onChanged: (v) =>
-                  context.read<AppState>().toggleActivity(dayLocal, act, v ?? false),
-            );
-          }),
+          ...state.activityTypes
+              .where((act) => act.deletedAt == null)
+              .map((act) {
+                final checked = entry.activities.any(
+                  (activity) => activity.activityTypeId == act.id,
+                );
+
+                return CheckboxListTile(
+                  title: Text(act.name),
+                  value: checked,
+                  onChanged: (v) =>
+                      context.read<AppState>().toggleActivity(
+                        dayLocal,
+                        act.name,
+                        v ?? false,
+                      ),
+                );
+              }),
 
           const SizedBox(height: 32),
         ],
@@ -868,19 +1623,6 @@ class _SettingsPageState extends State<SettingsPage> {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
 
-          // -------- Affichage de la dernière sauvegarde --------
-          if (state.lastExportAt != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Dernière sauvegarde : '
-                '${DateFormat('dd/MM/yyyy – HH:mm').format(state.lastExportAt!.toLocal())}',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
 
           Row(
             children: [
@@ -974,20 +1716,19 @@ class _SettingsPageState extends State<SettingsPage> {
           ReorderableListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            onReorder: (oldIndex, newIndex) {
-              if (newIndex > oldIndex) newIndex -= 1;
+            onReorderItem: (oldIndex, newIndex) {
               final item = state.painCategories.removeAt(oldIndex);
               state.painCategories.insert(newIndex, item);
               context.read<AppState>()._save();
               setState(() {});
             },
             children: [
-              for (final c in state.painCategories)
+              for (final c in state.painCategories.where((c) => c.deletedAt == null))
                 Card(
-                  key: ValueKey('pain_$c'),
+                  key: ValueKey('pain_${c.id}'),
                   child: ListTile(
                     leading: const Icon(Icons.drag_indicator),
-                    title: Text(c),
+                    title: Text(c.name),
                     trailing: Wrap(
                       spacing: 8,
                       children: [
@@ -995,7 +1736,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: const Icon(Icons.edit),
                           tooltip: 'Renommer',
                           onPressed: () async {
-                            final ctrl = TextEditingController(text: c);
+                            final ctrl = TextEditingController(text: c.name);
                             final newName = await showDialog<String>(
                               context: context,
                               builder: (ctx) => AlertDialog(
@@ -1023,7 +1764,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             );
                             if (newName != null && newName.isNotEmpty) {
-                              context.read<AppState>().renamePainCategory(c, newName);
+                              context.read<AppState>().renamePainCategory(c.name, newName);
                             }
                           },
                         ),
@@ -1031,7 +1772,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: const Icon(Icons.delete_outline),
                           tooltip: 'Supprimer',
                           onPressed: () =>
-                              context.read<AppState>().removePainCategory(c),
+                              context.read<AppState>().removePainCategory(c.name),
                         ),
                       ],
                     ),
@@ -1060,20 +1801,19 @@ class _SettingsPageState extends State<SettingsPage> {
           ReorderableListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            onReorder: (oldIndex, newIndex) {
-              if (newIndex > oldIndex) newIndex -= 1;
+            onReorderItem: (oldIndex, newIndex) {
               final item = state.activityTypes.removeAt(oldIndex);
               state.activityTypes.insert(newIndex, item);
               context.read<AppState>()._save();
               setState(() {});
             },
             children: [
-              for (final a in state.activityTypes)
+              for (final a in state.activityTypes.where((a) => a.deletedAt == null))
                 Card(
-                  key: ValueKey('act_$a'),
+                  key: ValueKey('act_${a.id}'),
                   child: ListTile(
                     leading: const Icon(Icons.drag_indicator),
-                    title: Text(a),
+                    title: Text(a.name),
                     trailing: Wrap(
                       spacing: 8,
                       children: [
@@ -1081,7 +1821,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: const Icon(Icons.edit),
                           tooltip: 'Renommer',
                           onPressed: () async {
-                            final ctrl = TextEditingController(text: a);
+                            final ctrl = TextEditingController(text: a.name);
                             final newName = await showDialog<String>(
                               context: context,
                               builder: (ctx) => AlertDialog(
@@ -1103,7 +1843,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             );
                             if (newName != null && newName.isNotEmpty) {
-                              context.read<AppState>().renameActivityType(a, newName);
+                              context.read<AppState>().renameActivityType(a.name, newName);
                             }
                           },
                         ),
@@ -1111,7 +1851,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           icon: const Icon(Icons.delete_outline),
                           tooltip: 'Supprimer',
                           onPressed: () =>
-                              context.read<AppState>().removeActivityType(a),
+                              context.read<AppState>().removeActivityType(a.name),
                         ),
                       ],
                     ),
@@ -1149,7 +1889,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   );
 
                   if (context.mounted) {
-                    context.read<AppState>().markExportDone();
                   }
                 },
               ),
@@ -1166,7 +1905,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   try {
                     if (kIsWeb) {
                       await downloadBytes(bytes, name);
-                      state.markExportDone();
 
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -1189,7 +1927,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     );
 
                     if (path != null) {
-                      state.markExportDone();
                     }
 
                     if (context.mounted) {

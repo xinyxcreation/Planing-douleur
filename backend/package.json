@@ -1,0 +1,27 @@
+{
+  "name": "planning-douleur-api",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "typecheck": "tsc --noEmit",
+    "bootstrap": "node scripts/bootstrap-db.js",
+    "migrate": "node scripts/migrate.js",
+    "setup": "node scripts/setup.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/jwt": "^10.2.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.5.0",
+    "mariadb": "^3.4.5",
+    "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}
