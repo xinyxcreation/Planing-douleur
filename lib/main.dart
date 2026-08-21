@@ -1213,6 +1213,10 @@ class AppState extends ChangeNotifier {
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
 
+    // ============================================================
+    // 1. CHARGEMENT LOCAL
+    // ============================================================
+
     final rawPain = sp.getString('painCategoriesV2');
     final rawActivity = sp.getString('activityTypesV2');
 
@@ -1256,8 +1260,7 @@ class AppState extends ChangeNotifier {
 
         decoded.forEach((key, value) {
           if (value is Map) {
-            entries[key.toString()] =
-                DayEntry.fromJson(
+            entries[key.toString()] = DayEntry.fromJson(
               Map<String, dynamic>.from(value),
             );
           }
@@ -1265,7 +1268,49 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    // Affichage immédiat du contenu local.
     notifyListeners();
+
+    // ============================================================
+    // 2. SYNCHRONISATION AUTOMATIQUE AVEC LE SERVEUR
+    // ============================================================
+
+    try {
+      final auth = AuthState();
+
+      await auth.load();
+
+      final token = auth.token;
+      final userId = auth.userId;
+
+      if (token == null ||
+          token.isEmpty ||
+          userId == null ||
+          userId.isEmpty) {
+        return;
+      }
+
+      initSync(userId: userId);
+
+      _apiClient.token = token;
+      _syncManager.userId = userId;
+
+      // Si le planning local est vide mais qu'un ancien curseur
+      // existe encore, il faut reconstruire les données depuis 0.
+      if (entries.isEmpty) {
+        await _syncStorage.clearCursor(userId);
+      }
+
+      await _syncManager.sync();
+
+      // Sauvegarde du résultat de la synchronisation.
+      await _save();
+
+      notifyListeners();
+    } catch (_) {
+      // Hors-ligne ou serveur indisponible :
+      // on conserve les données locales.
+    }
   }
 
   Future<void> _save() async {
