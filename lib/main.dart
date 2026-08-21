@@ -778,6 +778,102 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void reorderPainCategories(int oldIndex, int newIndex) {
+    final visible = painCategories
+        .where((c) => c.deletedAt == null)
+        .toList();
+
+    if (oldIndex < newIndex) {
+      newIndex--;
+    }
+
+    if (oldIndex < 0 ||
+        oldIndex >= visible.length ||
+        newIndex < 0 ||
+        newIndex >= visible.length) {
+      return;
+    }
+
+    final item = visible.removeAt(oldIndex);
+    visible.insert(newIndex, item);
+
+    for (int i = 0; i < visible.length; i++) {
+      final current = visible[i];
+
+      final realIndex = painCategories.indexWhere(
+        (c) => c.id == current.id,
+      );
+
+      if (realIndex == -1) continue;
+
+      final updated = PainCategory(
+        id: current.id,
+        name: current.name,
+        position: i,
+        deletedAt: current.deletedAt,
+      );
+
+      painCategories[realIndex] = updated;
+
+      _saveAndQueue(
+        entity: 'pain_category',
+        operation: 'UPDATE',
+        data: updated.toJson(),
+      );
+    }
+
+    _save();
+    notifyListeners();
+  }
+
+  void reorderActivityTypes(int oldIndex, int newIndex) {
+    final visible = activityTypes
+        .where((a) => a.deletedAt == null)
+        .toList();
+
+    if (oldIndex < newIndex) {
+      newIndex--;
+    }
+
+    if (oldIndex < 0 ||
+        oldIndex >= visible.length ||
+        newIndex < 0 ||
+        newIndex >= visible.length) {
+      return;
+    }
+
+    final item = visible.removeAt(oldIndex);
+    visible.insert(newIndex, item);
+
+    for (int i = 0; i < visible.length; i++) {
+      final current = visible[i];
+
+      final realIndex = activityTypes.indexWhere(
+        (a) => a.id == current.id,
+      );
+
+      if (realIndex == -1) continue;
+
+      final updated = ActivityType(
+        id: current.id,
+        name: current.name,
+        position: i,
+        deletedAt: current.deletedAt,
+      );
+
+      activityTypes[realIndex] = updated;
+
+      _saveAndQueue(
+        entity: 'activity_type',
+        operation: 'UPDATE',
+        data: updated.toJson(),
+      );
+    }
+
+    _save();
+    notifyListeners();
+  }
+
   void addActivityType(String n) {
     n = n.trim();
 
@@ -1897,10 +1993,10 @@ class _SettingsPageState extends State<SettingsPage> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             onReorderItem: (oldIndex, newIndex) {
-              final item = state.painCategories.removeAt(oldIndex);
-              state.painCategories.insert(newIndex, item);
-              context.read<AppState>()._save();
-              setState(() {});
+              context.read<AppState>().reorderPainCategories(
+                oldIndex,
+                newIndex,
+              );
             },
             children: [
               for (final c in state.painCategories.where((c) => c.deletedAt == null))
@@ -1982,10 +2078,10 @@ class _SettingsPageState extends State<SettingsPage> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             onReorderItem: (oldIndex, newIndex) {
-              final item = state.activityTypes.removeAt(oldIndex);
-              state.activityTypes.insert(newIndex, item);
-              context.read<AppState>()._save();
-              setState(() {});
+              context.read<AppState>().reorderActivityTypes(
+                oldIndex,
+                newIndex,
+              );
             },
             children: [
               for (final a in state.activityTypes.where((a) => a.deletedAt == null))
