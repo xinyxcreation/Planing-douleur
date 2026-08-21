@@ -426,15 +426,17 @@ class AppState extends ChangeNotifier {
   late final SyncManager _syncManager;
 
   bool _syncInitialized = false;
+
   static const Uuid _uuid = Uuid();
 
-  static const String _pendingSyncKey = 'pendingSyncChangesV1';
+  static const String _pendingSyncKey =
+      'pendingSyncChangesV1';
 
-  void initSync({String? userId}) {
+  void initSync({
+    required String userId,
+  }) {
     if (_syncInitialized) {
-      if (userId != null && userId.isNotEmpty) {
-        _syncManager.userId = userId;
-      }
+      _syncManager.userId = userId;
       return;
     }
 
@@ -445,7 +447,7 @@ class AppState extends ChangeNotifier {
     _syncManager = SyncManager(
       apiClient: _apiClient,
       storage: _syncStorage,
-      userId: userId ?? '',
+      userId: userId,
       onRemoteChange: (change) async {
         await _applyRemoteChange(change);
       },
@@ -458,6 +460,7 @@ class AppState extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> _getPendingChanges() async {
     final sp = await SharedPreferences.getInstance();
+
     final raw = sp.getString(_pendingSyncKey);
 
     if (raw == null || raw.isEmpty) {
@@ -473,18 +476,20 @@ class AppState extends ChangeNotifier {
 
       return decoded
           .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
+          .map(
+            (item) => Map<String, dynamic>.from(item),
+          )
           .toList();
     } catch (_) {
       return <Map<String, dynamic>>[];
     }
   }
 
-  Future<void> _queueSyncChange(
-    String entity,
-    String operation,
-    Map<String, dynamic> data,
-  ) async {
+  Future<void> _queueSyncChange({
+    required String entity,
+    required String operation,
+    required Map<String, dynamic> data,
+  }) async {
     final sp = await SharedPreferences.getInstance();
 
     final pending = await _getPendingChanges();
@@ -505,6 +510,27 @@ class AppState extends ChangeNotifier {
     final sp = await SharedPreferences.getInstance();
 
     await sp.remove(_pendingSyncKey);
+  }
+
+  Future<void> _saveAndQueue({
+    required String entity,
+    required String operation,
+    required Map<String, dynamic> data,
+  }) async {
+    await _save();
+
+    await _queueSyncChange(
+      entity: entity,
+      operation: operation,
+      data: data,
+    );
+
+    try {
+      await syncNow();
+    } catch (_) {
+      // Le changement reste dans pendingSyncChangesV1.
+      // Il sera envoyé à la prochaine synchronisation.
+    }
   }
 
   Future<void> syncNow() async {
@@ -528,27 +554,6 @@ class AppState extends ChangeNotifier {
     _syncManager.userId = userId;
 
     await _syncManager.sync();
-  }
-
-  Future<void> _saveAndQueue(
-    String entity,
-    String operation,
-    Map<String, dynamic> data,
-  ) async {
-    await _save();
-
-    await _queueSyncChange(
-      entity,
-      operation,
-      data,
-    );
-
-    try {
-      await syncNow();
-    } catch (_) {
-      // Le changement reste dans pendingSyncChangesV1.
-      // Il sera envoyé lors de la prochaine synchronisation.
-    }
   }
 
   List<PainCategory> painCategories = [
@@ -617,9 +622,16 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  void setPainLevel(DateTime day, String cat, int lvl) {
+  Future<void> setPainLevel(
+    DateTime day,
+    String cat,
+    int lvl,
+  ) async {
     final category = painCategoryByName(cat);
     if (category == null) return;
+
+    final key = _key(day);
+    final wasNewEntry = !entries.containsKey(key);
 
     final entry = entryFor(day);
 
@@ -627,32 +639,58 @@ class AppState extends ChangeNotifier {
       (pain) => pain.painCategoryId == category.id,
     );
 
+    final isNewPain = index < 0;
+
     final pain = DayPainLevel(
-      id: index >= 0
-          ? entry.painLevels[index].id
-          : _uuid.v7(),
+      id: isNewPain
+          ? _uuid.v7()
+          : entry.painLevels[index].id,
       dayEntryId: entry.id,
       painCategoryId: category.id,
       level: lvl,
     );
 
-    if (index >= 0) {
-      entry.painLevels[index] = pain;
-    } else {
+    if (isNewPain) {
       entry.painLevels.add(pain);
+    } else {
+      entry.painLevels[index] = pain;
     }
 
-    _saveAndQueue(
-      'day_pain_level',
-      'UPDATE',
-      pain.toJson(),
+    await _save();
+
+    if (wasNewEntry) {
+      await _queueSyncChange(
+        entity: 'day_entry',
+        operation: 'INSERT',
+        data: entry.toJson(),
+      );
+    }
+
+    await _queueSyncChange(
+      entity: 'day_pain_level',
+      operation: isNewPain ? 'INSERT' : 'UPDATE',
+      data: pain.toJson(),
     );
+
     notifyListeners();
+
+    try {
+      await syncNow();
+    } catch (_) {
+      // Les changements restent dans la file locale.
+    }
   }
 
-  void toggleActivity(DateTime day, String act, bool checked) {
+  Future<void> toggleActivity(
+    DateTime day,
+    String act,
+    bool checked,
+  ) async {
     final activityType = activityTypeByName(act);
     if (activityType == null) return;
+
+    final key = _key(day);
+    final wasNewEntry = !entries.containsKey(key);
 
     final entry = entryFor(day);
 
@@ -661,31 +699,58 @@ class AppState extends ChangeNotifier {
     );
 
     if (checked) {
-      if (index < 0) {
-        entry.activities.add(
-          DayActivity(
-            id: _uuid.v7(),
-            dayEntryId: entry.id,
-            activityTypeId: activityType.id,
-          ),
+      if (index >= 0) {
+        return;
+      }
+
+      final activity = DayActivity(
+        id: _uuid.v7(),
+        dayEntryId: entry.id,
+        activityTypeId: activityType.id,
+      );
+
+      entry.activities.add(activity);
+
+      await _save();
+
+      if (wasNewEntry) {
+        await _queueSyncChange(
+          entity: 'day_entry',
+          operation: 'INSERT',
+          data: entry.toJson(),
         );
       }
-    } else if (index >= 0) {
+
+      await _queueSyncChange(
+        entity: 'day_activity',
+        operation: 'INSERT',
+        data: activity.toJson(),
+      );
+    } else {
+      if (index < 0) {
+        return;
+      }
+
+      final activity = entry.activities[index];
+
       entry.activities.removeAt(index);
+
+      await _save();
+
+      await _queueSyncChange(
+        entity: 'day_activity',
+        operation: 'DELETE',
+        data: activity.toJson(),
+      );
     }
 
-    _saveAndQueue(
-      'day_activity',
-      checked ? 'INSERT' : 'DELETE',
-      entry.activities.isNotEmpty
-          ? entry.activities.last.toJson()
-          : {
-              'id': '',
-              'dayEntryId': entry.id,
-              'activityTypeId': activityType.id,
-            },
-    );
     notifyListeners();
+
+    try {
+      await syncNow();
+    } catch (_) {
+      // Les changements restent dans la file locale.
+    }
   }
 
   void addPainCategory(String n) {
@@ -705,9 +770,9 @@ class AppState extends ChangeNotifier {
     painCategories.add(item);
 
     _saveAndQueue(
-      'pain_category',
-      'INSERT',
-      item.toJson(),
+      entity: 'pain_category',
+      operation: 'INSERT',
+      data: item.toJson(),
     );
 
     notifyListeners();
@@ -730,9 +795,9 @@ class AppState extends ChangeNotifier {
     activityTypes.add(item);
 
     _saveAndQueue(
-      'activity_type',
-      'INSERT',
-      item.toJson(),
+      entity: 'activity_type',
+      operation: 'INSERT',
+      data: item.toJson(),
     );
 
     notifyListeners();

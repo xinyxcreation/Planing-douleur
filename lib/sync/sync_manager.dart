@@ -14,6 +14,7 @@ class SyncManager {
 
   final ApiClient apiClient;
   final SyncStorage storage;
+
   String userId;
 
   final Future<void> Function(RemoteChange change) onRemoteChange;
@@ -33,6 +34,10 @@ class SyncManager {
       return;
     }
 
+    if (userId.isEmpty) {
+      throw StateError('Synchronisation impossible : userId absent.');
+    }
+
     _running = true;
 
     try {
@@ -44,7 +49,6 @@ class SyncManager {
 
       if (pending.isNotEmpty) {
         await apiClient.push(pending);
-
         await clearPendingChanges();
       }
 
@@ -69,9 +73,7 @@ class SyncManager {
         final changes = rawChanges
             .map(
               (item) => RemoteChange.fromJson(
-                Map<String, dynamic>.from(
-                  item as Map,
-                ),
+                Map<String, dynamic>.from(item as Map),
               ),
             )
             .toList();
