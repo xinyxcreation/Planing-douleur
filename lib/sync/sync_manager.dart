@@ -14,7 +14,7 @@ class SyncManager {
 
   final ApiClient apiClient;
   final SyncStorage storage;
-  final String userId;
+  String userId;
 
   final Future<void> Function(RemoteChange change) onRemoteChange;
 

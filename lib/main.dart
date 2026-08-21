@@ -428,8 +428,15 @@ class AppState extends ChangeNotifier {
   bool _syncInitialized = false;
   static const Uuid _uuid = Uuid();
 
-  void initSync() {
-    if (_syncInitialized) return;
+  static const String _pendingSyncKey = 'pendingSyncChangesV1';
+
+  void initSync({String? userId}) {
+    if (_syncInitialized) {
+      if (userId != null && userId.isNotEmpty) {
+        _syncManager.userId = userId;
+      }
+      return;
+    }
 
     _apiClient = ApiClient(
       baseUrl: SyncConfig.baseUrl,
@@ -438,33 +445,110 @@ class AppState extends ChangeNotifier {
     _syncManager = SyncManager(
       apiClient: _apiClient,
       storage: _syncStorage,
-      userId: '',
+      userId: userId ?? '',
       onRemoteChange: (change) async {
         await _applyRemoteChange(change);
       },
-      getPendingChanges: () async {
-        return <Map<String, dynamic>>[];
-      },
-      clearPendingChanges: () async {},
+      getPendingChanges: _getPendingChanges,
+      clearPendingChanges: _clearPendingChanges,
     );
 
     _syncInitialized = true;
   }
 
-  Future<void> syncNow() async {
-    initSync();
+  Future<List<Map<String, dynamic>>> _getPendingChanges() async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_pendingSyncKey);
 
+    if (raw == null || raw.isEmpty) {
+      return <Map<String, dynamic>>[];
+    }
+
+    try {
+      final decoded = jsonDecode(raw);
+
+      if (decoded is! List) {
+        return <Map<String, dynamic>>[];
+      }
+
+      return decoded
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _queueSyncChange(
+    String entity,
+    String operation,
+    Map<String, dynamic> data,
+  ) async {
+    final sp = await SharedPreferences.getInstance();
+
+    final pending = await _getPendingChanges();
+
+    pending.add({
+      'entity': entity,
+      'operation': operation,
+      'data': data,
+    });
+
+    await sp.setString(
+      _pendingSyncKey,
+      jsonEncode(pending),
+    );
+  }
+
+  Future<void> _clearPendingChanges() async {
+    final sp = await SharedPreferences.getInstance();
+
+    await sp.remove(_pendingSyncKey);
+  }
+
+  Future<void> syncNow() async {
     final auth = AuthState();
 
     await auth.load();
 
-    _apiClient.token = auth.token;
+    final token = auth.token;
+    final userId = auth.userId;
 
-    if (_apiClient.token == null || _apiClient.token!.isEmpty) {
+    if (token == null ||
+        token.isEmpty ||
+        userId == null ||
+        userId.isEmpty) {
       return;
     }
 
+    initSync(userId: userId);
+
+    _apiClient.token = token;
+    _syncManager.userId = userId;
+
     await _syncManager.sync();
+  }
+
+  Future<void> _saveAndQueue(
+    String entity,
+    String operation,
+    Map<String, dynamic> data,
+  ) async {
+    await _save();
+
+    await _queueSyncChange(
+      entity,
+      operation,
+      data,
+    );
+
+    try {
+      await syncNow();
+    } catch (_) {
+      // Le changement reste dans pendingSyncChangesV1.
+      // Il sera envoyé lors de la prochaine synchronisation.
+    }
   }
 
   List<PainCategory> painCategories = [
@@ -558,7 +642,11 @@ class AppState extends ChangeNotifier {
       entry.painLevels.add(pain);
     }
 
-    _save();
+    _saveAndQueue(
+      'day_pain_level',
+      'UPDATE',
+      pain.toJson(),
+    );
     notifyListeners();
   }
 
@@ -586,7 +674,17 @@ class AppState extends ChangeNotifier {
       entry.activities.removeAt(index);
     }
 
-    _save();
+    _saveAndQueue(
+      'day_activity',
+      checked ? 'INSERT' : 'DELETE',
+      entry.activities.isNotEmpty
+          ? entry.activities.last.toJson()
+          : {
+              'id': '',
+              'dayEntryId': entry.id,
+              'activityTypeId': activityType.id,
+            },
+    );
     notifyListeners();
   }
 
@@ -598,15 +696,20 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    painCategories.add(
-      PainCategory(
-        id: _uuid.v7(),
-        name: n,
-        position: painCategories.length,
-      ),
+    final item = PainCategory(
+      id: _uuid.v7(),
+      name: n,
+      position: painCategories.length,
     );
 
-    _save();
+    painCategories.add(item);
+
+    _saveAndQueue(
+      'pain_category',
+      'INSERT',
+      item.toJson(),
+    );
+
     notifyListeners();
   }
 
@@ -618,15 +721,20 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    activityTypes.add(
-      ActivityType(
-        id: _uuid.v7(),
-        name: n,
-        position: activityTypes.length,
-      ),
+    final item = ActivityType(
+      id: _uuid.v7(),
+      name: n,
+      position: activityTypes.length,
     );
 
-    _save();
+    activityTypes.add(item);
+
+    _saveAndQueue(
+      'activity_type',
+      'INSERT',
+      item.toJson(),
+    );
+
     notifyListeners();
   }
 
@@ -1018,7 +1126,14 @@ class AppState extends ChangeNotifier {
 
     await sp.setString(
       'entriesV2',
-      jsonEncode(entries),
+      jsonEncode(
+        entries.map(
+          (key, value) => MapEntry(
+            key,
+            value.toJson(),
+          ),
+        ),
+      ),
     );
   }
 

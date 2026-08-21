@@ -9,7 +9,7 @@
     },
     {
       "name": "archive",
-      "rootUri": "file:///home/romain/.pub-cache/hosted/pub.dev/archive-4.0.9",
+      "rootUri": "file:///home/romain/.pub-cache/hosted/pub.dev/archive-4.1.0",
       "packageUri": "lib/",
       "languageVersion": "3.0"
     },
@@ -219,7 +219,7 @@
     },
     {
       "name": "image",
-      "rootUri": "file:///home/romain/.pub-cache/hosted/pub.dev/image-4.9.1",
+      "rootUri": "file:///home/romain/.pub-cache/hosted/pub.dev/image-4.9.2",
       "packageUri": "lib/",
       "languageVersion": "3.0"
     },
