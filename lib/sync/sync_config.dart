@@ -1,4 +1,3 @@
 class SyncConfig {
-  static const String baseUrl =
-      'http://127.0.0.1:3000';
+  static const String baseUrl = 'https://planning-douleur.xinyx.fr';
 }
