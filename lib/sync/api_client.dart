@@ -64,22 +64,22 @@ class ApiClient {
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> getPainCatalog() async {
+  Future<List<dynamic>> getPainCatalog() async {
     final response = await http.get(
       _uri('/catalog/pain'),
       headers: _headers,
     );
 
-    return _decode(response);
+    return _decodeList(response);
   }
 
-  Future<Map<String, dynamic>> getActivityCatalog() async {
+  Future<List<dynamic>> getActivityCatalog() async {
     final response = await http.get(
       _uri('/catalog/activity'),
       headers: _headers,
     );
 
-    return _decode(response);
+    return _decodeList(response);
   }
 
   Future<Map<String, dynamic>> getEntry(String date) async {
@@ -89,6 +89,40 @@ class ApiClient {
     );
 
     return _decode(response);
+  }
+
+  List<dynamic> _decodeList(http.Response response) {
+    dynamic body;
+
+    try {
+      body = jsonDecode(response.body);
+    } catch (_) {
+      throw ApiException(
+        response.statusCode,
+        'Réponse serveur invalide.',
+      );
+    }
+
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300) {
+      final message = body is Map<String, dynamic>
+          ? body['message']?.toString() ?? 'Erreur serveur.'
+          : 'Erreur serveur.';
+
+      throw ApiException(
+        response.statusCode,
+        message,
+      );
+    }
+
+    if (body is! List) {
+      throw ApiException(
+        response.statusCode,
+        'Format de réponse invalide.',
+      );
+    }
+
+    return body;
   }
 
   Map<String, dynamic> _decode(http.Response response) {

@@ -1234,6 +1234,53 @@ class AppState extends ChangeNotifier {
     }
   }
 
+
+  Future<void> _syncCatalogs() async {
+    final auth = AuthState();
+
+    await auth.load();
+
+    final token = auth.token;
+    final userId = auth.userId;
+
+    if (token == null ||
+        token.isEmpty ||
+        userId == null ||
+        userId.isEmpty) {
+      return;
+    }
+
+    initSync(userId: userId);
+
+    _apiClient.token = token;
+    _syncManager.userId = userId;
+
+    final painResponse = await _apiClient.getPainCatalog();
+    final activityResponse = await _apiClient.getActivityCatalog();
+
+    painCategories = painResponse
+        .whereType<Map>()
+        .map(
+          (item) => PainCategory.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+
+    activityTypes = activityResponse
+        .whereType<Map>()
+        .map(
+          (item) => ActivityType.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+
+    await _save();
+
+    notifyListeners();
+  }
+
   Future<void> load() async {
     final sp = await SharedPreferences.getInstance();
 
@@ -1325,6 +1372,7 @@ class AppState extends ChangeNotifier {
         await _syncStorage.clearCursor(userId);
       }
 
+      await _syncCatalogs();
       await _syncManager.sync();
 
       // Sauvegarde du résultat de la synchronisation.
