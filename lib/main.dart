@@ -664,9 +664,6 @@ class AppState extends ChangeNotifier {
     final category = painCategoryByName(cat);
     if (category == null) return;
 
-    final key = _key(day);
-    final wasNewEntry = !entries.containsKey(key);
-
     final entry = entryFor(day);
 
     final index = entry.painLevels.indexWhere(
@@ -692,13 +689,11 @@ class AppState extends ChangeNotifier {
 
     await _save();
 
-    if (wasNewEntry) {
-      await _queueSyncChange(
-        entity: 'day_entry',
-        operation: 'INSERT',
-        data: entry.toJson(),
-      );
-    }
+    await _queueSyncChange(
+      entity: 'day_entry',
+      operation: 'INSERT',
+      data: entry.toJson(),
+    );
 
     await _queueSyncChange(
       entity: 'day_pain_level',
@@ -723,9 +718,6 @@ class AppState extends ChangeNotifier {
     final activityType = activityTypeByName(act);
     if (activityType == null) return;
 
-    final key = _key(day);
-    final wasNewEntry = !entries.containsKey(key);
-
     final entry = entryFor(day);
 
     final index = entry.activities.indexWhere(
@@ -747,13 +739,11 @@ class AppState extends ChangeNotifier {
 
       await _save();
 
-      if (wasNewEntry) {
-        await _queueSyncChange(
-          entity: 'day_entry',
-          operation: 'INSERT',
-          data: entry.toJson(),
-        );
-      }
+      await _queueSyncChange(
+        entity: 'day_entry',
+        operation: 'INSERT',
+        data: entry.toJson(),
+      );
 
       await _queueSyncChange(
         entity: 'day_activity',
