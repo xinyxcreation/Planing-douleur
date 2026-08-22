@@ -777,7 +777,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void addPainCategory(String n) {
+  Future<void> addPainCategory(String n) async {
     n = n.trim();
 
     if (n.isEmpty ||
@@ -793,7 +793,7 @@ class AppState extends ChangeNotifier {
 
     painCategories.add(item);
 
-    _saveAndQueue(
+    await _saveAndQueue(
       entity: 'pain_category',
       operation: 'INSERT',
       data: item.toJson(),
@@ -2098,8 +2098,10 @@ class _SettingsPageState extends State<SettingsPage> {
           _addRow(
             controller: painController,
             hint: 'Ajouter une douleur (ex: Épaule)',
-            onAdd: () {
-              context.read<AppState>().addPainCategory(painController.text.trim());
+            onAdd: () async {
+              await context.read<AppState>().addPainCategory(
+                painController.text.trim(),
+              );
               painController.clear();
             },
           ),
