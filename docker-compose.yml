@@ -1,0 +1,14 @@
+services:
+  planning-douleur-api:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    networks:
+      - pwa-core
+    expose:
+      - "3080"
+
+networks:
+  pwa-core:
+    external: true

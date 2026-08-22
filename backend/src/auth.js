@@ -39,6 +39,14 @@ export async function registerUser({ email, password, displayName }) {
     throw error;
   }
 
+  if (!password || String(password).length < 8) {
+    const error = new Error(
+      'Le mot de passe doit contenir au moins 8 caractères.',
+    );
+    error.code = 'VALIDATION_ERROR';
+    throw error;
+  }
+
   const passwordHash = await hashPassword(password);
   const userId = uuidv7();
   const now = new Date();
@@ -60,7 +68,9 @@ export async function registerUser({ email, password, displayName }) {
       );
     } catch (error) {
       if (error.errno === 1062) {
-        const conflict = new Error('Cette adresse email existe déjà.');
+        const conflict = new Error(
+          'Cette adresse email existe déjà.',
+        );
         conflict.code = 'CONFLICT';
         throw conflict;
       }
@@ -69,9 +79,15 @@ export async function registerUser({ email, password, displayName }) {
     }
 
     const rows = await conn.query(
-      `SELECT id, email, display_name, created_at, updated_at
+      `SELECT
+         id,
+         email,
+         display_name,
+         created_at,
+         updated_at
        FROM users
-       WHERE id = ?`,
+       WHERE id = ?
+       LIMIT 1`,
       [userId],
     );
 
@@ -99,7 +115,10 @@ export async function loginUser({ email, password }) {
 
     const user = rows[0];
 
-    if (!user || !(await verifyPassword(password, user.password_hash))) {
+    if (
+      !user ||
+      !(await verifyPassword(password, user.password_hash))
+    ) {
       const error = new Error('Identifiants invalides.');
       error.code = 'AUTHENTICATION_ERROR';
       throw error;
@@ -156,7 +175,8 @@ export async function getUserFromSessionToken(token) {
          s.id AS session_id,
          s.expires_at
        FROM sessions s
-       INNER JOIN users u ON u.id = s.user_id
+       INNER JOIN users u
+         ON u.id = s.user_id
        WHERE s.token_hash = ?
          AND s.revoked_at IS NULL
          AND s.expires_at > UTC_TIMESTAMP(6)
@@ -177,6 +197,10 @@ export async function getUserFromSessionToken(token) {
 }
 
 export async function revokeSession(token) {
+  if (!token) {
+    return;
+  }
+
   const tokenHash = hashSessionToken(token);
 
   await withConnection(async (conn) => {

@@ -1,0 +1,1252 @@
+const API = window.APP_CONFIG.API_BASE_URL;
+
+const DB_NAME = 'planning-douleur-v2';
+const DB_VERSION = 1;
+const STORE_NAME = 'state';
+
+const TOKEN_KEY = 'planning_douleur_token';
+const USER_KEY = 'planning_douleur_user';
+
+let db = null;
+
+let state = {
+  token: localStorage.getItem(TOKEN_KEY),
+  user: readJson(USER_KEY, null),
+  categories: [],
+  activities: [],
+  entries: {},
+  cursor: 0,
+  queue: [],
+};
+
+const $ = (id) => document.getElementById(id);
+
+function uid() {
+  return crypto.randomUUID();
+}
+
+function readJson(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+async function openDb() {
+  if (db) return db;
+
+  db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+
+      if (!database.objectStoreNames.contains(STORE_NAME)) {
+        database.createObjectStore(STORE_NAME);
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  return db;
+}
+
+async function loadLocalState() {
+  const database = await openDb();
+
+  const saved = await new Promise((resolve, reject) => {
+    const request = database
+      .transaction(STORE_NAME)
+      .objectStore(STORE_NAME)
+      .get('state');
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  if (saved) {
+    state = {
+      ...state,
+      ...saved,
+    };
+  }
+}
+
+async function saveLocalState() {
+  const database = await openDb();
+
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction(
+      STORE_NAME,
+      'readwrite',
+    );
+
+    transaction
+      .objectStore(STORE_NAME)
+      .put(state, 'state');
+
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+function todayKey() {
+  const now = new Date();
+
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(
+    /[&<>"']/g,
+    (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    }[char]),
+  );
+}
+
+function setStatus(message) {
+  const element = $('syncStatus');
+
+  if (element) {
+    element.textContent = message;
+  }
+}
+
+function authHeaders() {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (state.token) {
+    headers.Authorization =
+      `Bearer ${state.token}`;
+  }
+
+  return headers;
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(
+    `${API}${path}`,
+    {
+      ...options,
+      headers: {
+        ...authHeaders(),
+        ...(options.headers || {}),
+      },
+    },
+  );
+
+  let body = null;
+
+  try {
+    body = await response.json();
+  } catch (_) {}
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearSession();
+    }
+
+    throw new Error(
+      body?.message ||
+      `Erreur HTTP ${response.status}`,
+    );
+  }
+
+  return body;
+}
+
+/* ============================================================
+   AUTH
+   ============================================================ */
+
+async function doLogin(email, password) {
+  const body = await api(
+    '/auth/login',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+      }),
+    },
+  );
+
+  const token = body?.session?.token;
+
+  if (!token) {
+    throw new Error(
+      'Token de session absent.',
+    );
+  }
+
+  state.token = token;
+  state.user = body.user || null;
+
+  localStorage.setItem(
+    TOKEN_KEY,
+    token,
+  );
+
+  localStorage.setItem(
+    USER_KEY,
+    JSON.stringify(state.user),
+  );
+
+  await saveLocalState();
+  await bootstrapAfterLogin();
+}
+
+async function doRegister(
+  email,
+  password,
+  displayName,
+) {
+  const body = await api(
+    '/auth/register',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        email: email.trim(),
+        password,
+        displayName:
+          displayName.trim() || undefined,
+      }),
+    },
+  );
+
+  const token = body?.session?.token;
+
+  if (!token) {
+    throw new Error(
+      'Token de session absent.',
+    );
+  }
+
+  state.token = token;
+  state.user = body.user || null;
+
+  localStorage.setItem(
+    TOKEN_KEY,
+    token,
+  );
+
+  localStorage.setItem(
+    USER_KEY,
+    JSON.stringify(state.user),
+  );
+
+  await saveLocalState();
+  await bootstrapAfterLogin();
+}
+
+function clearSession() {
+  state.token = null;
+  state.user = null;
+
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+async function logout() {
+  try {
+    if (state.token) {
+      await api(
+        '/auth/logout',
+        {
+          method: 'POST',
+        },
+      );
+    }
+  } catch (_) {
+    // Déconnexion locale même si le serveur est indisponible.
+  }
+
+  clearSession();
+  render();
+}
+
+/* ============================================================
+   CATALOGUES
+   ============================================================ */
+
+async function loadCatalogsFromServer() {
+  const [pain, activity] =
+    await Promise.all([
+      api('/catalog/pain'),
+      api('/catalog/activity'),
+    ]);
+
+  state.categories =
+    Array.isArray(pain?.items)
+      ? pain.items
+      : [];
+
+  state.activities =
+    Array.isArray(activity?.items)
+      ? activity.items
+      : [];
+
+  await saveLocalState();
+}
+
+async function bootstrapAfterLogin() {
+  setStatus('Chargement...');
+
+  try {
+    await loadCatalogsFromServer();
+    await sync();
+    render();
+  } catch (error) {
+    setStatus('Mode hors ligne');
+    render();
+  }
+}
+
+/* ============================================================
+   JOURNÉE
+   ============================================================ */
+
+function selectedDate() {
+  const input = $('entryDate');
+
+  if (input?.value) {
+    return input.value;
+  }
+
+  return todayKey();
+}
+
+function getEntry(date = selectedDate()) {
+  if (!state.entries[date]) {
+    state.entries[date] = {
+      id: uid(),
+      entryDate: date,
+      painLevels: [],
+      activities: [],
+    };
+  }
+
+  return state.entries[date];
+}
+
+function setPain(categoryId, level) {
+  const entry = getEntry();
+
+  const value = Math.max(
+    0,
+    Math.min(3, Number(level)),
+  );
+
+  let pain = entry.painLevels.find(
+    (item) =>
+      item.painCategoryId === categoryId,
+  );
+
+  if (!pain) {
+    pain = {
+      id: uid(),
+      dayEntryId: entry.id,
+      painCategoryId: categoryId,
+      level: value,
+      deletedAt: null,
+    };
+
+    entry.painLevels.push(pain);
+
+    queueChange(
+      'day_pain_level',
+      'INSERT',
+      pain,
+    );
+  } else {
+    pain.level = value;
+    pain.deletedAt = null;
+
+    queueChange(
+      'day_pain_level',
+      'UPDATE',
+      pain,
+    );
+  }
+
+  queueChange(
+    'day_entry',
+    'INSERT',
+    {
+      id: entry.id,
+      entryDate: entry.entryDate,
+      deletedAt: null,
+    },
+  );
+
+  saveLocalState();
+  render();
+}
+
+function toggleActivity(
+  activityTypeId,
+  checked,
+) {
+  const entry = getEntry();
+
+  const index =
+    entry.activities.findIndex(
+      (item) =>
+        item.activityTypeId ===
+        activityTypeId,
+    );
+
+  if (checked && index < 0) {
+    const activity = {
+      id: uid(),
+      dayEntryId: entry.id,
+      activityTypeId,
+      deletedAt: null,
+    };
+
+    entry.activities.push(activity);
+
+    queueChange(
+      'day_activity',
+      'INSERT',
+      activity,
+    );
+  }
+
+  if (!checked && index >= 0) {
+    const activity =
+      entry.activities[index];
+
+    entry.activities.splice(index, 1);
+
+    queueChange(
+      'day_activity',
+      'DELETE',
+      activity,
+    );
+  }
+
+  queueChange(
+    'day_entry',
+    'INSERT',
+    {
+      id: entry.id,
+      entryDate: entry.entryDate,
+      deletedAt: null,
+    },
+  );
+
+  saveLocalState();
+  render();
+}
+
+/* ============================================================
+   FILE D'ATTENTE
+   ============================================================ */
+
+function queueChange(
+  entity,
+  operation,
+  data,
+) {
+  state.queue.push({
+    entity,
+    operation,
+    data: structuredClone(data),
+  });
+}
+
+/* ============================================================
+   SYNCHRONISATION
+   ============================================================ */
+
+function orderChanges(changes) {
+  const priority = (change) => {
+    switch (change.entity) {
+      case 'pain_category':
+      case 'activity_type':
+        return 0;
+
+      case 'day_entry':
+        return 1;
+
+      case 'day_pain_level':
+      case 'day_activity':
+        return 2;
+
+      default:
+        return 3;
+    }
+  };
+
+  return [...changes].sort(
+    (a, b) =>
+      priority(a) - priority(b),
+  );
+}
+
+async function pushPending() {
+  if (!state.queue.length) {
+    return;
+  }
+
+  const batch = orderChanges(
+    state.queue.slice(0, 500),
+  );
+
+  await api(
+    '/sync',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        changes: batch,
+      }),
+    },
+  );
+
+  state.queue = state.queue.filter(
+    (item) => !batch.includes(item),
+  );
+
+  await saveLocalState();
+}
+
+async function pullChanges() {
+  while (true) {
+    const response = await api(
+      `/sync?cursor=${state.cursor}`,
+    );
+
+    for (const change of
+      response.changes || []) {
+      applyRemoteChange(change);
+    }
+
+    state.cursor =
+      Number(
+        response.nextCursor ??
+        state.cursor,
+      );
+
+    await saveLocalState();
+
+    if (!response.hasMore) {
+      break;
+    }
+  }
+}
+
+async function sync() {
+  if (!state.token) {
+    return;
+  }
+
+  if (!navigator.onLine) {
+    setStatus('Hors ligne');
+    return;
+  }
+
+  try {
+    setStatus('Synchronisation...');
+
+    await pushPending();
+    await pullChanges();
+
+    setStatus('Synchronisé');
+
+  } catch (error) {
+    console.error(
+      'Synchronisation:',
+      error,
+    );
+
+    setStatus(
+      'Synchronisation en attente',
+    );
+  }
+
+  render();
+}
+
+function applyRemoteChange(change) {
+  const data = change?.data;
+
+  if (!data) {
+    return;
+  }
+
+  switch (change.entity) {
+    case 'pain_category':
+      mergeItem(
+        state.categories,
+        data,
+      );
+      break;
+
+    case 'activity_type':
+      mergeItem(
+        state.activities,
+        data,
+      );
+      break;
+
+    case 'day_entry':
+      applyRemoteEntry(
+        change,
+        data,
+      );
+      break;
+
+    case 'day_pain_level':
+      applyRemotePain(
+        change,
+        data,
+      );
+      break;
+
+    case 'day_activity':
+      applyRemoteActivity(
+        change,
+        data,
+      );
+      break;
+  }
+}
+
+function mergeItem(array, item) {
+  const index =
+    array.findIndex(
+      (existing) =>
+        existing.id === item.id,
+    );
+
+  if (index < 0) {
+    array.push(item);
+  } else {
+    array[index] = item;
+  }
+}
+
+function applyRemoteEntry(
+  change,
+  data,
+) {
+  const date = String(
+    data.entryDate || '',
+  );
+
+  if (!date) return;
+
+  if (!state.entries[date]) {
+    state.entries[date] = {
+      id: data.id,
+      entryDate: date,
+      painLevels: [],
+      activities: [],
+    };
+  }
+
+  const entry =
+    state.entries[date];
+
+  entry.id = data.id;
+
+  if (change.operation === 'DELETE') {
+    entry.deletedAt =
+      data.deletedAt ||
+      new Date().toISOString();
+  }
+}
+
+function findEntryById(id) {
+  return Object.values(
+    state.entries,
+  ).find(
+    (entry) =>
+      entry.id === id,
+  );
+}
+
+function applyRemotePain(
+  change,
+  data,
+) {
+  const entry =
+    findEntryById(
+      data.dayEntryId,
+    );
+
+  if (!entry) return;
+
+  const index =
+    entry.painLevels.findIndex(
+      (item) =>
+        item.id === data.id,
+    );
+
+  if (
+    change.operation === 'DELETE' ||
+    data.deletedAt
+  ) {
+    if (index >= 0) {
+      entry.painLevels.splice(
+        index,
+        1,
+      );
+    }
+
+    return;
+  }
+
+  if (index < 0) {
+    entry.painLevels.push(data);
+  } else {
+    entry.painLevels[index] =
+      data;
+  }
+}
+
+function applyRemoteActivity(
+  change,
+  data,
+) {
+  const entry =
+    findEntryById(
+      data.dayEntryId,
+    );
+
+  if (!entry) return;
+
+  const index =
+    entry.activities.findIndex(
+      (item) =>
+        item.id === data.id,
+    );
+
+  if (
+    change.operation === 'DELETE' ||
+    data.deletedAt
+  ) {
+    if (index >= 0) {
+      entry.activities.splice(
+        index,
+        1,
+      );
+    }
+
+    return;
+  }
+
+  if (index < 0) {
+    entry.activities.push(data);
+  } else {
+    entry.activities[index] =
+      data;
+  }
+}
+
+/* ============================================================
+   UI
+   ============================================================ */
+
+function render() {
+  const app = $('app');
+
+  if (!app) {
+    return;
+  }
+
+  if (!state.token) {
+    renderLogin(app);
+  } else {
+    renderPlanning(app);
+  }
+}
+
+function renderLogin(app) {
+  app.innerHTML = `
+    <main class="screen">
+      <section class="card login-card">
+
+        <img
+          src="./icon.svg"
+          class="app-icon"
+          alt=""
+        >
+
+        <h1>Suivis douleur</h1>
+
+        <p class="muted">
+          Connexion à votre compte
+        </p>
+
+        <form id="loginForm">
+
+          <label>
+            Email
+
+            <input
+              id="loginEmail"
+              type="email"
+              autocomplete="email"
+              required
+            >
+          </label>
+
+          <label>
+            Mot de passe
+
+            <input
+              id="loginPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+            >
+          </label>
+
+          <button
+            class="primary"
+            type="submit"
+          >
+            Se connecter
+          </button>
+
+        </form>
+
+        <p
+          id="loginError"
+          class="error"
+        ></p>
+
+      </section>
+    </main>
+  `;
+
+  $('loginForm').addEventListener(
+    'submit',
+    async (event) => {
+      event.preventDefault();
+
+      $('loginError').textContent =
+        '';
+
+      try {
+        await doLogin(
+          $('loginEmail').value,
+          $('loginPassword').value,
+        );
+      } catch (error) {
+        $('loginError').textContent =
+          error.message;
+      }
+    },
+  );
+}
+
+function renderPlanning(app) {
+  const entry = getEntry();
+
+  const pains =
+    state.categories
+      .filter(
+        (category) =>
+          !category.deletedAt,
+      )
+      .map((category) => {
+
+        const current =
+          entry.painLevels.find(
+            (pain) =>
+              pain.painCategoryId ===
+              category.id,
+          );
+
+        return `
+          <div class="pain-row">
+
+            <strong>
+              ${escapeHtml(
+                category.name,
+              )}
+            </strong>
+
+            <div class="levels">
+
+              ${[0, 1, 2, 3]
+                .map((level) => `
+                  <button
+                    type="button"
+                    class="level ${
+                      current?.level === level
+                        ? 'selected'
+                        : ''
+                    }"
+                    data-pain-id="${
+                      escapeHtml(
+                        category.id,
+                      )
+                    }"
+                    data-level="${level}"
+                  >
+                    ${level}
+                  </button>
+                `)
+                .join('')}
+
+            </div>
+
+          </div>
+        `;
+      })
+      .join('');
+
+  const activities =
+    state.activities
+      .filter(
+        (activity) =>
+          !activity.deletedAt,
+      )
+      .map((activity) => {
+
+        const checked =
+          entry.activities.some(
+            (item) =>
+              item.activityTypeId ===
+              activity.id,
+          );
+
+        return `
+          <label class="activity">
+
+            <input
+              type="checkbox"
+              data-activity-id="${
+                escapeHtml(
+                  activity.id,
+                )
+              }"
+              ${checked ? 'checked' : ''}
+            >
+
+            <span>
+              ${escapeHtml(
+                activity.name,
+              )}
+            </span>
+
+          </label>
+        `;
+      })
+      .join('');
+
+  app.innerHTML = `
+    <header class="topbar">
+
+      <div>
+        <strong>
+          Suivis douleur
+        </strong>
+
+        <small>
+          ${escapeHtml(
+            state.user?.email || '',
+          )}
+        </small>
+      </div>
+
+      <button
+        id="logout"
+        type="button"
+      >
+        Déconnexion
+      </button>
+
+    </header>
+
+    <main class="page">
+
+      <section class="card">
+
+        <label>
+          Date
+
+          <input
+            id="entryDate"
+            type="date"
+            value="${state.selectedDate}"
+          >
+        </label>
+
+      </section>
+
+      <section class="card">
+
+        <h2>Douleurs</h2>
+
+        <p class="muted">
+          0 = aucune ·
+          1 = légère ·
+          2 = modérée ·
+          3 = forte
+        </p>
+
+        ${pains}
+
+      </section>
+
+      <section class="card">
+
+        <h2>Activités</h2>
+
+        ${activities}
+
+      </section>
+
+      <section class="card actions">
+
+        <button
+          id="sync"
+          class="primary"
+          type="button"
+        >
+          Synchroniser
+        </button>
+
+        <button
+          id="export"
+          type="button"
+        >
+          Exporter
+        </button>
+
+        <input
+          id="import"
+          type="file"
+          accept=".json,application/json"
+        >
+
+        <span
+          id="syncStatus"
+        ></span>
+
+      </section>
+
+    </main>
+  `;
+
+  $('logout').onclick = logout;
+
+  $('entryDate').onchange = () => {
+    state.selectedDate =
+      $('entryDate').value ||
+      todayKey();
+
+    render();
+  };
+
+  document
+    .querySelectorAll('[data-pain-id]')
+    .forEach(
+      (button) => {
+        button.onclick = () => {
+          setPain(
+            button.dataset.painId,
+            Number(
+              button.dataset.level,
+            ),
+          );
+        };
+      },
+    );
+
+  document
+    .querySelectorAll(
+      '[data-activity-id]',
+    )
+    .forEach(
+      (checkbox) => {
+        checkbox.onchange =
+          () => {
+            toggleActivity(
+              checkbox.dataset.activityId,
+              checkbox.checked,
+            );
+          };
+      },
+    );
+
+  $('sync').onclick = sync;
+  $('export').onclick =
+    exportHistory;
+
+  $('import').onchange =
+    importHistory;
+}
+
+function exportHistory() {
+  const payload = {
+    format:
+      'planning-douleur-json',
+    version: 2,
+    exportedAt:
+      new Date().toISOString(),
+    categories:
+      state.categories,
+    activities:
+      state.activities,
+    entries:
+      state.entries,
+  };
+
+  const blob =
+    new Blob(
+      [
+        JSON.stringify(
+          payload,
+          null,
+          2,
+        ),
+      ],
+      {
+        type:
+          'application/json',
+      },
+    );
+
+  const url =
+    URL.createObjectURL(blob);
+
+  const link =
+    document.createElement('a');
+
+  link.href = url;
+
+  link.download =
+    `planning-douleur-${todayKey()}.json`;
+
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
+
+async function importHistory(
+  event,
+) {
+  const file =
+    event.target.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    const text =
+      await file.text();
+
+    const data =
+      JSON.parse(text);
+
+    if (
+      Array.isArray(
+        data.categories,
+      )
+    ) {
+      state.categories =
+        data.categories;
+    }
+
+    if (
+      Array.isArray(
+        data.activities,
+      )
+    ) {
+      state.activities =
+        data.activities;
+    }
+
+    if (
+      data.entries &&
+      typeof data.entries ===
+        'object'
+    ) {
+      state.entries = {
+        ...state.entries,
+        ...data.entries,
+      };
+    }
+
+    await saveLocalState();
+
+    render();
+
+  } catch (error) {
+    alert(
+      `Import impossible : ${error.message}`,
+    );
+  }
+
+  event.target.value = '';
+}
+
+/* ============================================================
+   INITIALISATION
+   ============================================================ */
+
+async function main() {
+  await loadLocalState();
+
+  $('app').innerHTML =
+    '<div class="screen"><div class="card">Chargement...</div></div>';
+
+  if (state.token) {
+    try {
+      await bootstrapAfterLogin();
+      return;
+    } catch (_) {
+      render();
+      return;
+    }
+  }
+
+  render();
+}
+
+window.addEventListener(
+  'online',
+  () => {
+    sync();
+  },
+);
+
+window.addEventListener(
+  'DOMContentLoaded',
+  () => {
+    if (
+      'serviceWorker' in navigator
+    ) {
+      navigator.serviceWorker
+        .register('./sw.js')
+        .catch(console.error);
+    }
+
+    main().catch((error) => {
+      console.error(error);
+      render();
+    });
+  },
+);

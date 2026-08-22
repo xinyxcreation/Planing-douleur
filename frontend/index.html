@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#00897b">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg">
+  <title>Suivis douleur</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <section id="login" class="screen">
+    <div class="card login-card">
+      <h1>Suivis douleur</h1>
+      <p>Connexion à votre compte</p>
+      <input id="email" type="email" placeholder="Adresse email" autocomplete="username">
+      <input id="password" type="password" placeholder="Mot de passe" autocomplete="current-password">
+      <button id="loginBtn">Se connecter</button>
+      <div id="loginError" class="error"></div>
+    </div>
+  </section>
+
+  <section id="main" class="hidden">
+    <header>
+      <div>
+        <h1>Suivis douleur</h1>
+        <small id="syncStatus">Prêt</small>
+      </div>
+      <button id="logoutBtn" class="secondary">Déconnexion</button>
+    </header>
+
+    <main>
+      <div class="toolbar">
+        <button id="prevDay">‹</button>
+        <input id="date" type="date">
+        <button id="nextDay">›</button>
+        <button id="todayBtn" class="secondary">Aujourd'hui</button>
+      </div>
+
+      <section class="card">
+        <h2 id="dateTitle">Douleurs</h2>
+        <div id="painList"></div>
+        <button id="saveDay">Enregistrer</button>
+      </section>
+
+      <section class="card">
+        <h2>Activités</h2>
+        <div id="activityList"></div>
+      </section>
+
+      <section class="card">
+        <h2>Gestion</h2>
+        <div class="grid">
+          <button id="catalogBtn" class="secondary">Catégories / activités</button>
+          <button id="exportBtn" class="secondary">Exporter l'historique</button>
+          <label class="button secondary">
+            Importer un historique
+            <input id="importFile" type="file" accept="application/json" hidden>
+          </label>
+          <button id="syncBtn" class="secondary">Synchroniser</button>
+        </div>
+      </section>
+
+      <section id="catalog" class="card hidden">
+        <h2>Catégories de douleurs</h2>
+        <div id="categories"></div>
+        <div class="add-row">
+          <input id="newCategory" placeholder="Nouvelle douleur">
+          <button id="addCategory">Ajouter</button>
+        </div>
+
+        <h2>Activités</h2>
+        <div id="activities"></div>
+        <div class="add-row">
+          <input id="newActivity" placeholder="Nouvelle activité">
+          <button id="addActivity">Ajouter</button>
+        </div>
+      </section>
+    </main>
+  </section>
+</div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

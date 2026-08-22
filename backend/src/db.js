@@ -1,26 +1,20 @@
 import mariadb from 'mariadb';
-import { config } from './config.js';
 
-export const pool = mariadb.createPool({
-  host: config.db.host,
-  port: config.db.port,
-  user: config.db.user,
-  password: config.db.password,
-  database: config.db.database,
-  connectionLimit: config.db.connectionLimit,
-  timezone: 'Z',
+const pool = mariadb.createPool({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT || 3306),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  connectionLimit: 10,
+  timezone: 'Z'
 });
 
 export async function withConnection(fn) {
   const conn = await pool.getConnection();
-
   try {
     return await fn(conn);
   } finally {
     conn.release();
   }
-}
-
-export async function closeDatabase() {
-  await pool.end();
 }
