@@ -429,8 +429,8 @@ class AppState extends ChangeNotifier {
 
   static const Uuid _uuid = Uuid();
 
-  static const String _pendingSyncKey =
-      'pendingSyncChangesV1';
+  String _pendingSyncKey(String userId) =>
+      'pendingSyncChanges_$userId';
 
   void initSync({
     required String userId,
@@ -459,9 +459,21 @@ class AppState extends ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> _getPendingChanges() async {
+    final auth = AuthState();
+
+    await auth.load();
+
+    final userId = auth.userId;
+
+    if (userId == null || userId.isEmpty) {
+      return <Map<String, dynamic>>[];
+    }
+
     final sp = await SharedPreferences.getInstance();
 
-    final raw = sp.getString(_pendingSyncKey);
+    final raw = sp.getString(
+      _pendingSyncKey(userId),
+    );
 
     if (raw == null || raw.isEmpty) {
       return <Map<String, dynamic>>[];
@@ -490,6 +502,16 @@ class AppState extends ChangeNotifier {
     required String operation,
     required Map<String, dynamic> data,
   }) async {
+    final auth = AuthState();
+
+    await auth.load();
+
+    final userId = auth.userId;
+
+    if (userId == null || userId.isEmpty) {
+      return;
+    }
+
     final sp = await SharedPreferences.getInstance();
 
     final pending = await _getPendingChanges();
@@ -501,15 +523,27 @@ class AppState extends ChangeNotifier {
     });
 
     await sp.setString(
-      _pendingSyncKey,
+      _pendingSyncKey(userId),
       jsonEncode(pending),
     );
   }
 
   Future<void> _clearPendingChanges() async {
+    final auth = AuthState();
+
+    await auth.load();
+
+    final userId = auth.userId;
+
+    if (userId == null || userId.isEmpty) {
+      return;
+    }
+
     final sp = await SharedPreferences.getInstance();
 
-    await sp.remove(_pendingSyncKey);
+    await sp.remove(
+      _pendingSyncKey(userId),
+    );
   }
 
   Future<void> _saveAndQueue({
